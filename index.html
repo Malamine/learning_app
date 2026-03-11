@@ -341,10 +341,18 @@
     </div>
     <div class="form-group">
       <label>Daily Reminder</label>
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;">
+        <input type="time" id="reminder-time-input" value="09:00"
+          style="background:var(--code-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.85rem;padding:0.4rem 0.6rem;outline:none;max-width:120px;" />
+        <span style="font-size:0.75rem;color:var(--text-dim);">preferred time</span>
+      </div>
       <div style="display:flex;align-items:center;gap:0.75rem;">
         <button class="btn btn-primary" id="reminder-btn" style="font-size:0.8rem;">🔔 Enable daily reminder</button>
         <span id="reminder-status" style="font-size:0.75rem;color:var(--text-dim);"></span>
       </div>
+      <p style="font-size:0.7rem;color:var(--text-dim);margin-top:0.5rem;line-height:1.4;">
+        Android will fire the reminder within a few hours of your chosen time to save battery.
+      </p>
     </div>
     <div class="form-group">
       <label>Weak spots &amp; history</label>
@@ -1008,23 +1016,42 @@ $('clear-history-btn').addEventListener('click', () => {
 });
 
 // ─── Daily reminder ───────────────────────────────────────────────────────────
+function getReminderTime() { return localStorage.getItem('reminder_time') || '09:00'; }
+function saveReminderTime(t) { localStorage.setItem('reminder_time', t); }
+
+// Push reminder config to service worker via postMessage
+async function syncReminderConfig() {
+  if (!('serviceWorker' in navigator)) return;
+  const sw = await navigator.serviceWorker.ready;
+  sw.active?.postMessage({ type: 'REMINDER_CONFIG', time: getReminderTime() });
+}
+
 async function updateReminderStatus() {
   const btn = $('reminder-btn');
   const status = $('reminder-status');
+  $('reminder-time-input').value = getReminderTime();
+
   if (!('serviceWorker' in navigator) || !('periodicSync' in (await navigator.serviceWorker.ready))) {
-    btn.textContent = '🔔 Daily reminder';
-    btn.disabled = true;
-    status.textContent = 'Not supported on this browser';
-    return;
+    btn.textContent = '🔔 Daily reminder'; btn.disabled = true;
+    status.textContent = 'Not supported on this browser'; return;
   }
   const sw = await navigator.serviceWorker.ready;
   const tags = await sw.periodicSync.getTags();
   const active = tags.includes('daily-quiz-reminder');
   btn.textContent = active ? '🔕 Disable reminder' : '🔔 Enable daily reminder';
-  btn.className = active ? 'btn btn-warn' : 'btn btn-primary';
+  btn.className = `btn ${active ? 'btn-warn' : 'btn-primary'}`;
   btn.style.fontSize = '0.8rem';
-  status.textContent = active ? 'You\'ll be reminded every day ✓' : '';
+  status.textContent = active ? `Every day around ${getReminderTime()} ✓` : '';
 }
+
+$('reminder-time-input').addEventListener('change', async () => {
+  saveReminderTime($('reminder-time-input').value);
+  await syncReminderConfig();
+  const sw = await navigator.serviceWorker.ready;
+  const tags = await sw.periodicSync.getTags();
+  if (tags.includes('daily-quiz-reminder'))
+    $('reminder-status').textContent = `Every day around ${getReminderTime()} ✓`;
+});
 
 $('reminder-btn').addEventListener('click', async () => {
   try {
@@ -1032,7 +1059,7 @@ $('reminder-btn').addEventListener('click', async () => {
     if (perm !== 'granted') { alert('Please allow notifications to enable reminders.'); return; }
 
     const sw = await navigator.serviceWorker.ready;
-    if (!('periodicSync' in sw)) { alert('Periodic background sync is not supported on this browser.\n\nTry Chrome on Android with the app installed.'); return; }
+    if (!('periodicSync' in sw)) { alert('Periodic background sync is not supported.\n\nUse Chrome on Android with the app installed on your home screen.'); return; }
 
     const syncPerm = await navigator.permissions.query({ name: 'periodic-background-sync' });
     if (syncPerm.state !== 'granted') { alert('Background sync permission denied.\n\nMake sure the app is installed on your home screen and try again.'); return; }
@@ -1041,15 +1068,15 @@ $('reminder-btn').addEventListener('click', async () => {
     if (tags.includes('daily-quiz-reminder')) {
       await sw.periodicSync.unregister('daily-quiz-reminder');
     } else {
-      await sw.periodicSync.register('daily-quiz-reminder', { minInterval: 24 * 60 * 60 * 1000 });
+      saveReminderTime($('reminder-time-input').value);
+      await sw.periodicSync.register('daily-quiz-reminder', { minInterval: 12 * 60 * 60 * 1000 });
+      await syncReminderConfig();
     }
     await updateReminderStatus();
-  } catch (err) {
-    alert('Could not set reminder: ' + err.message);
-  }
+  } catch (err) { alert('Could not set reminder: ' + err.message); }
 });
 
-// Refresh reminder status each time settings opens
+// Refresh status when settings opens
 $('settings-btn').addEventListener('click', updateReminderStatus, true);
 
 // ─── PWA ──────────────────────────────────────────────────────────────────────
