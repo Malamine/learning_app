@@ -1,6 +1,6 @@
 {
   "name": "Your custom Quiz App",
-  "short_name": "FP Quiz",
+  "short_name": "UrQuiz",
   "description": "Interactive quiz app for your custom code, powered by your PDF and Gemini",
   "start_url": "/learning_app/",
   "scope": "/learning_app/",
