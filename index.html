@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your personal Quiz !</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#1a1a2e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d0d1a; --surface: #1a1a2e; --surface2: #16213e; --border: #2d2d4e;
+      --accent: #4f8ef7; --accent-dim: #2a4a8a; --success: #4caf82;
+      --warning: #f7c948; --danger: #e05555;
+      --text: #e0e0f0; --text-dim: #8888aa; --code-bg: #111128;
+      --question: #1e3a5f; --answer: #1a2e1a;
+      --font-mono: 'Cascadia Code','Fira Code','JetBrains Mono','Courier New',monospace;
+      --font-ui: system-ui,-apple-system,sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-ui); height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* Header */
+    header { display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 1rem; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 0.5rem; }
+    .header-left { display: flex; align-items: center; gap: 0.5rem; min-width: 0; flex: 1; }
+    header h1 { font-size: 1rem; font-weight: 700; color: var(--accent); white-space: nowrap; }
+    .book-switcher {
+      display: none; align-items: center; gap: 0.3rem; background: var(--surface2);
+      border: 1px solid var(--border); border-radius: 20px; padding: 0.2rem 0.5rem 0.2rem 0.75rem;
+      cursor: pointer; max-width: 200px; transition: border-color 0.15s;
+    }
+    .book-switcher:hover { border-color: var(--accent); }
+    .book-switcher span { font-size: 0.72rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .book-switcher .sw-arrow { color: var(--text-dim); font-size: 0.6rem; flex-shrink: 0; }
+    .header-actions { display: flex; gap: 0.4rem; align-items: center; flex-shrink: 0; }
+
+    /* Buttons */
+    button { cursor: pointer; border: none; border-radius: 6px; font-family: var(--font-ui); transition: background 0.15s, opacity 0.15s; }
+    .btn { padding: 0.45rem 0.9rem; font-size: 0.8rem; font-weight: 600; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #3a7ae0; }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--surface2); color: var(--text); }
+    .btn-success { background: rgba(76,175,130,0.15); color: var(--success); border: 1px solid var(--success); }
+    .btn-success:hover { background: var(--success); color: #fff; }
+    .btn-warn { background: rgba(247,201,72,0.15); color: var(--warning); border: 1px solid var(--warning); }
+    .btn-warn:hover { background: var(--warning); color: #0d0d1a; }
+    .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+    .btn-danger:hover { background: var(--danger); color: #fff; }
+    .btn-icon { background: transparent; color: var(--text-dim); padding: 0.4rem; font-size: 1rem; border-radius: 6px; }
+    .btn-icon:hover { background: var(--surface2); color: var(--text); }
+    #install-btn { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent); display: none; }
+    #install-btn:hover { background: var(--accent); color: #fff; }
+
+    /* Layout */
+    .app-body { display: flex; flex: 1; overflow: hidden; }
+
+    /* Sidebar */
+    .sidebar { width: 260px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
+    @media (max-width: 700px) {
+      .sidebar { display: none; }
+      .sidebar.open { display: flex; position: fixed; top: 0; left: 0; bottom: 0; z-index: 100; width: 80%; max-width: 300px; }
+    }
+    .sidebar-header { padding: 0.6rem 1rem; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); border-bottom: 1px solid var(--border); }
+    .sidebar-section { padding: 0.4rem; border-bottom: 1px solid var(--border); }
+    .sidebar-content { flex: 1; overflow-y: auto; padding: 0.4rem; }
+    .ch-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.65rem; border-radius: 6px; cursor: pointer; margin-bottom: 0.2rem; transition: background 0.1s; }
+    .ch-item:hover { background: var(--surface2); }
+    .ch-item.active { background: var(--accent-dim); }
+    .ch-item-info { flex: 1; min-width: 0; }
+    .ch-title { font-size: 0.8rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ch-meta { font-size: 0.68rem; color: var(--text-dim); margin-top: 0.1rem; }
+    .ch-score { font-size: 0.68rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 10px; flex-shrink: 0; }
+    .ch-score.good { background: rgba(76,175,130,0.2); color: var(--success); }
+    .ch-score.ok   { background: rgba(247,201,72,0.2); color: var(--warning); }
+    .ch-score.bad  { background: rgba(224,85,85,0.2); color: var(--danger); }
+    .sidebar-empty { padding: 1rem; text-align: center; color: var(--text-dim); font-size: 0.8rem; line-height: 1.5; }
+
+    /* Main panel */
+    .main-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* Book setup */
+    #book-setup-screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem 1rem; gap: 1.5rem; overflow-y: auto; }
+    .setup-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 480px; }
+    .setup-card h2 { font-size: 1rem; margin-bottom: 0.75rem; color: var(--accent); }
+    .setup-card p { font-size: 0.82rem; color: var(--text-dim); margin-bottom: 1rem; line-height: 1.5; }
+    .input-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    input[type="text"], input[type="password"] { flex: 1; background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: var(--font-mono); font-size: 0.82rem; padding: 0.55rem 0.75rem; outline: none; transition: border 0.15s; }
+    input:focus { border-color: var(--accent); }
+    .drop-zone { border: 2px dashed var(--border); border-radius: 10px; padding: 3rem 1rem; text-align: center; cursor: pointer; transition: border-color 0.15s, background 0.15s; width: 100%; max-width: 480px; }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(79,142,247,0.05); }
+    .drop-zone .dz-icon { font-size: 3rem; margin-bottom: 0.75rem; }
+    .drop-zone p { color: var(--text-dim); font-size: 0.85rem; }
+    .drop-zone .dz-hint { margin-top: 0.4rem; font-size: 0.75rem; }
+    .drop-zone input { display: none; }
+
+    /* Chapter select */
+    #chapter-select-screen { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+    .cs-toolbar { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
+    .cs-toolbar h2 { font-size: 0.9rem; color: var(--text); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chapter-grid { flex: 1; overflow-y: auto; padding: 1rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.75rem; align-content: start; }
+    .chapter-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+    .chapter-card:hover { border-color: var(--accent); background: var(--surface2); }
+    .chapter-card.has-weak { border-color: rgba(247,201,72,0.4); }
+    .chapter-card .card-title { font-size: 0.83rem; font-weight: 600; color: var(--text); margin-bottom: 0.4rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .chapter-card .card-meta { font-size: 0.7rem; color: var(--text-dim); }
+    .chapter-card .card-badges { display: flex; gap: 0.4rem; margin-top: 0.5rem; flex-wrap: wrap; }
+    .card-score { font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.45rem; border-radius: 10px; }
+    .card-score.good { background: rgba(76,175,130,0.2); color: var(--success); }
+    .card-score.ok   { background: rgba(247,201,72,0.2); color: var(--warning); }
+    .card-score.bad  { background: rgba(224,85,85,0.2); color: var(--danger); }
+    .card-weak-dot { font-size: 0.7rem; color: var(--warning); }
+
+    /* Loading */
+    #loading-screen { flex: 1; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; }
+    .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { color: var(--text-dim); font-size: 0.9rem; text-align: center; max-width: 300px; }
+    .loading-progress { width: 220px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .loading-progress-fill { height: 100%; background: var(--accent); transition: width 0.2s; width: 0%; }
+
+    /* Chat */
+    #chat-screen { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+    .chat-toolbar { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; background: var(--surface2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .chapter-label { font-size: 0.8rem; color: var(--text-dim); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chapter-label strong { color: var(--text); }
+    .progress-bar-wrap { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+    .progress-bar { width: 70px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
+    .progress-label { font-size: 0.7rem; color: var(--text-dim); }
+    #messages { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; scroll-behavior: smooth; }
+    .msg { max-width: 85%; padding: 0.75rem 1rem; border-radius: 10px; font-size: 0.88rem; line-height: 1.6; word-break: break-word; }
+    .msg-system { background: var(--surface); border: 1px solid var(--border); align-self: center; text-align: center; max-width: 90%; color: var(--text-dim); font-size: 0.78rem; }
+    .msg-question { background: var(--question); border: 1px solid #2a5080; align-self: flex-start; }
+    .msg-question::before { content: '🎓 '; }
+    .msg-feedback { background: var(--surface2); border: 1px solid var(--border); align-self: flex-start; }
+    .msg-user { background: var(--answer); border: 1px solid #2a5030; align-self: flex-end; white-space: pre-wrap; }
+    .msg code { font-family: var(--font-mono); background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.85em; }
+    .msg pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; overflow-x: auto; margin: 0.5rem 0; font-family: var(--font-mono); font-size: 0.82em; }
+    .msg pre code { background: none; padding: 0; }
+    .assess-row { align-self: flex-start; display: flex; gap: 0.5rem; padding: 0.4rem 0.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 0.78rem; }
+    .assess-row span { color: var(--text-dim); display: flex; align-items: center; padding: 0 0.25rem; }
+    .assess-btn { padding: 0.3rem 0.75rem; font-size: 0.78rem; font-weight: 600; border-radius: 5px; }
+    .input-area { display: flex; gap: 0.5rem; padding: 0.75rem 1rem; background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; }
+    textarea { flex: 1; background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--font-ui); font-size: 0.88rem; padding: 0.6rem 0.8rem; resize: none; outline: none; min-height: 44px; max-height: 140px; line-height: 1.4; transition: border 0.15s; }
+    textarea:focus { border-color: var(--accent); }
+    textarea::placeholder { color: var(--text-dim); }
+
+    /* Summary */
+    #summary-screen { flex: 1; display: none; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; gap: 1.25rem; overflow-y: auto; }
+    .summary-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 480px; text-align: center; }
+    .summary-card h2 { font-size: 1.2rem; margin-bottom: 0.5rem; }
+    .score-big { font-size: 3rem; font-weight: 800; color: var(--accent); line-height: 1; margin: 0.75rem 0; }
+    .summary-card p { font-size: 0.85rem; color: var(--text-dim); }
+    .summary-weak { font-size: 0.82rem; color: var(--warning); margin-top: 0.4rem; }
+    .summary-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+
+    /* Modal */
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; align-items: center; justify-content: center; }
+    .modal-backdrop.open { display: flex; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; width: 90%; max-width: 420px; max-height: 90dvh; overflow-y: auto; }
+    .modal h2 { font-size: 1rem; margin-bottom: 1rem; }
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; font-size: 0.78rem; color: var(--text-dim); margin-bottom: 0.4rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+    .modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.25rem; }
+    #model-list { margin-top: 0.5rem; display: none; max-height: 160px; overflow-y: auto; background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem; }
+
+    /* Book picker modal */
+    .book-list { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
+    .book-item {
+      display: flex; align-items: center; gap: 0.6rem; padding: 0.65rem 0.75rem;
+      border-radius: 8px; border: 1px solid var(--border); cursor: pointer; transition: background 0.1s;
+    }
+    .book-item:hover { background: var(--surface2); }
+    .book-item.active { border-color: var(--accent); background: var(--accent-dim); }
+    .book-item-info { flex: 1; min-width: 0; }
+    .book-item-name { font-size: 0.85rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .book-item-meta { font-size: 0.7rem; color: var(--text-dim); margin-top: 0.1rem; }
+    .book-item-del { background: transparent; color: var(--text-dim); padding: 0.25rem 0.4rem; font-size: 0.8rem; border-radius: 4px; flex-shrink: 0; }
+    .book-item-del:hover { color: var(--danger); background: rgba(224,85,85,0.1); }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>Quiz</h1>
+    <div class="book-switcher" id="book-switcher" title="Switch book">
+      <span id="book-switcher-name">No book</span>
+      <span class="sw-arrow">▼</span>
+    </div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-ghost" id="install-btn">📲 Install</button>
+    <button class="btn-icon" id="sidebar-toggle-btn" title="Chapters">☰</button>
+    <button class="btn-icon" id="settings-btn" title="Settings">⚙</button>
+  </div>
+</header>
+
+<div class="app-body">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">Chapters</div>
+    <div class="sidebar-section" id="sidebar-actions" style="display:none;">
+      <button class="btn btn-primary" id="sidebar-random-btn" style="width:100%;margin-bottom:0.4rem;font-size:0.78rem;">🎲 Random chapter</button>
+      <button class="btn btn-warn" id="sidebar-weak-btn" style="width:100%;font-size:0.78rem;display:none;">🔁 Weak spots (<span id="sidebar-weak-count">0</span>)</button>
+    </div>
+    <div class="sidebar-content" id="sidebar-chapters">
+      <div class="sidebar-empty">No book loaded.<br/>Add a book to start.</div>
+    </div>
+  </aside>
+
+  <div class="main-panel">
+
+    <!-- Book setup -->
+    <div id="book-setup-screen">
+      <div class="setup-card" id="api-card">
+        <h2>🔑 Gemini API Key</h2>
+        <p>Enter your Gemini API key. Stored locally only.</p>
+        <div class="input-row">
+          <input type="password" id="api-key-input" placeholder="AIza..." autocomplete="off" />
+          <button class="btn btn-primary" id="save-key-btn">Save</button>
+        </div>
+        <p style="margin-top:0.6rem;font-size:0.72rem;">Free key at <span style="color:var(--accent)">aistudio.google.com/app/apikey</span></p>
+      </div>
+      <div class="drop-zone" id="book-drop-zone">
+        <input type="file" id="book-file-input" accept="application/pdf" />
+        <div class="dz-icon">📚</div>
+        <p id="dz-label"><strong>Drop a book PDF here</strong></p>
+        <p class="dz-hint">Chapters are detected automatically</p>
+        <p class="dz-hint" style="margin-top:0.5rem;color:var(--text-dim);">Drag &amp; drop or click to browse</p>
+      </div>
+    </div>
+
+    <!-- Chapter select -->
+    <div id="chapter-select-screen">
+      <div class="cs-toolbar">
+        <h2 id="cs-title">Select a chapter</h2>
+        <button class="btn btn-primary" id="cs-random-btn">🎲 Random</button>
+        <button class="btn btn-warn" id="cs-weak-btn" style="display:none;">🔁 Weak spots (<span id="cs-weak-count">0</span>)</button>
+      </div>
+      <div class="chapter-grid" id="chapter-grid"></div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading-screen">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loading-text">Loading…</div>
+      <div class="loading-progress"><div class="loading-progress-fill" id="loading-progress-fill"></div></div>
+    </div>
+
+    <!-- Chat -->
+    <div id="chat-screen">
+      <div class="chat-toolbar">
+        <div class="chapter-label" id="chapter-label">Chapter</div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar"><div class="progress-bar-fill" id="progress-fill" style="width:0%"></div></div>
+          <span class="progress-label" id="progress-label">0 / 0</span>
+        </div>
+        <button class="btn-icon" id="back-btn" title="Back to chapters" style="font-size:0.85rem;padding:0.3rem 0.5rem;">✕</button>
+      </div>
+      <div id="messages"></div>
+      <div class="input-area">
+        <textarea id="answer-input" placeholder="Type your answer… (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
+        <button class="btn btn-primary" id="send-btn">Send</button>
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <div id="summary-screen">
+      <div class="summary-card">
+        <h2>Session Complete! 🎉</h2>
+        <div class="score-big" id="summary-score">—</div>
+        <p id="summary-chapter"></p>
+        <p id="summary-detail" style="margin-top:0.5rem;"></p>
+        <p class="summary-weak" id="summary-weak" style="display:none;"></p>
+      </div>
+      <div class="summary-actions">
+        <button class="btn btn-primary" id="another-random-btn">🎲 Another random</button>
+        <button class="btn btn-ghost" id="choose-chapter-btn">📚 Choose chapter</button>
+        <button class="btn btn-ghost" id="review-btn">Review answers</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Book picker modal -->
+<div class="modal-backdrop" id="book-picker-modal">
+  <div class="modal">
+    <h2>📚 My Books</h2>
+    <div class="book-list" id="book-list"></div>
+    <button class="btn btn-primary" id="add-book-btn" style="width:100%;">+ Add a new book</button>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="book-picker-close-btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div class="modal-backdrop" id="settings-modal">
+  <div class="modal">
+    <h2>⚙ Settings</h2>
+    <div class="form-group">
+      <label>Gemini API Key</label>
+      <div class="input-row">
+        <input type="password" id="settings-api-input" placeholder="AIza..." autocomplete="off" />
+        <button class="btn btn-primary" id="settings-save-btn">Save</button>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Gemini Model</label>
+      <div class="input-row">
+        <input type="text" id="model-input" placeholder="gemini-1.5-flash" style="font-size:0.78rem;" />
+        <button class="btn btn-ghost" id="list-models-btn" style="font-size:0.78rem;white-space:nowrap;">🔍 List</button>
+      </div>
+      <div id="model-list"></div>
+    </div>
+    <div class="form-group">
+      <label>Questions per session</label>
+      <input type="text" id="num-questions-input" placeholder="4" style="max-width:80px;" />
+    </div>
+    <div class="form-group">
+      <label>Weak spots &amp; history</label>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="clear-weak-btn" style="font-size:0.8rem;">🗑 Clear weak spots</button>
+        <button class="btn btn-ghost" id="clear-history-btn" style="font-size:0.8rem;">🗑 Clear quiz history</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modal-close-btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ─── IndexedDB ────────────────────────────────────────────────────────────────
+function openDB() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open('fp-quiz-db', 1);
+    req.onupgradeneeded = e => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
+    req.onsuccess = e => res(e.target.result);
+    req.onerror   = e => rej(e.target.error);
+  });
+}
+async function dbGet(key) {
+  const db = await openDB();
+  return new Promise((res, rej) => { const r = db.transaction('store','readonly').objectStore('store').get(key); r.onsuccess = e => res(e.target.result); r.onerror = e => rej(e.target.error); });
+}
+async function dbSet(key, val) {
+  const db = await openDB();
+  return new Promise((res, rej) => { const r = db.transaction('store','readwrite').objectStore('store').put(val, key); r.onsuccess = () => res(); r.onerror = e => rej(e.target.error); });
+}
+async function dbDelete(key) {
+  const db = await openDB();
+  return new Promise((res, rej) => { const r = db.transaction('store','readwrite').objectStore('store').delete(key); r.onsuccess = () => res(); r.onerror = e => rej(e.target.error); });
+}
+
+// ─── Book storage ─────────────────────────────────────────────────────────────
+function getBooks()       { try { return JSON.parse(localStorage.getItem('books') || '[]'); } catch { return []; } }
+function saveBooks(books) { localStorage.setItem('books', JSON.stringify(books)); }
+function getActiveBookId(){ return localStorage.getItem('active_book_id') || ''; }
+function setActiveBookId(id){ localStorage.setItem('active_book_id', id); }
+function getActiveBook()  { const id = getActiveBookId(); return getBooks().find(b => b.id === id) || null; }
+function genId()          { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+// ─── State ────────────────────────────────────────────────────────────────────
+const state = {
+  apiKey: '', model: 'gemini-1.5-flash', numQuestions: 4, deferInstall: null,
+  // Active book (derived from localStorage)
+  bookId: '', bookName: '', bookPdf: null, chapters: [],
+  // Session
+  mode: 'normal', activeChapterIdx: -1,
+  questions: [], currentQ: 0, answers: [],
+  chapterText: '', weakTextCache: {},
+  weakQueue: [], lastSession: null,
+};
+
+const $ = id => document.getElementById(id);
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  state.apiKey       = localStorage.getItem('gemini_api_key') || '';
+  state.model        = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
+  state.numQuestions = parseInt(localStorage.getItem('num_questions') || '4');
+  if (state.apiKey) $('api-card').style.display = 'none';
+
+  const book = getActiveBook() || getBooks()[0] || null;
+  if (book) {
+    await loadBook(book.id);
+  } else {
+    showScreen('book-setup');
+  }
+}
+
+async function loadBook(id, thenLaunch = true) {
+  const books = getBooks();
+  const book = books.find(b => b.id === id);
+  if (!book) { showScreen('book-setup'); return; }
+
+  setActiveBookId(id);
+  state.bookId   = book.id;
+  state.bookName = book.name;
+  state.chapters = book.chapters;
+
+  showScreen('loading'); setLoading('Restoring book…', 10);
+  try {
+    const buf = await dbGet(`book_pdf_${id}`);
+    if (!buf) throw new Error('PDF not found in storage.');
+    state.bookPdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    updateBookSwitcher();
+    renderSidebar();
+    updateWeakBadges();
+    if (thenLaunch) launchRandom();
+  } catch (err) {
+    alert('Could not load book: ' + err.message + '\nPlease re-upload the PDF.');
+    // Remove broken book
+    saveBooks(books.filter(b => b.id !== id));
+    await dbDelete(`book_pdf_${id}`);
+    const remaining = getBooks();
+    if (remaining.length) await loadBook(remaining[0].id);
+    else showScreen('book-setup');
+  }
+}
+
+// ─── Book switcher ────────────────────────────────────────────────────────────
+function updateBookSwitcher() {
+  $('book-switcher-name').textContent = state.bookName || 'No book';
+  $('book-switcher').style.display = 'flex';
+}
+
+$('book-switcher').addEventListener('click', openBookPicker);
+
+function openBookPicker() {
+  renderBookList();
+  $('book-picker-modal').classList.add('open');
+}
+
+function renderBookList() {
+  const books = getBooks();
+  const list = $('book-list');
+  if (!books.length) {
+    list.innerHTML = '<div style="color:var(--text-dim);font-size:0.82rem;padding:0.5rem;">No books added yet.</div>';
+    return;
+  }
+  list.innerHTML = books.map(b => {
+    const isActive = b.id === state.bookId;
+    const chCount = b.chapters.length;
+    return `<div class="book-item${isActive ? ' active' : ''}" data-id="${b.id}">
+      <div class="book-item-info">
+        <div class="book-item-name">${escHtml(b.name)}</div>
+        <div class="book-item-meta">${chCount} chapter${chCount !== 1 ? 's' : ''} · Added ${new Date(b.addedAt).toLocaleDateString()}</div>
+      </div>
+      <button class="book-item-del" data-del="${b.id}" title="Remove book">✕</button>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.book-item').forEach(el => {
+    el.addEventListener('click', async e => {
+      if (e.target.dataset.del) return; // handled below
+      const id = el.dataset.id;
+      $('book-picker-modal').classList.remove('open');
+      if (id !== state.bookId) await loadBook(id);
+    });
+  });
+
+  list.querySelectorAll('[data-del]').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const id = btn.dataset.del;
+      const book = getBooks().find(b => b.id === id);
+      if (!confirm(`Remove "${book?.name}"? This cannot be undone.`)) return;
+      saveBooks(getBooks().filter(b => b.id !== id));
+      await dbDelete(`book_pdf_${id}`);
+      renderBookList();
+      if (id === state.bookId) {
+        $('book-picker-modal').classList.remove('open');
+        const remaining = getBooks();
+        if (remaining.length) await loadBook(remaining[0].id);
+        else {
+          state.bookId = ''; state.bookName = ''; state.bookPdf = null; state.chapters = [];
+          $('book-switcher').style.display = 'none';
+          renderSidebar(); showScreen('book-setup');
+        }
+      }
+    });
+  });
+}
+
+$('add-book-btn').addEventListener('click', () => {
+  $('book-picker-modal').classList.remove('open');
+  $('dz-label').innerHTML = '<strong>Drop a new book PDF here</strong>';
+  showScreen('book-setup');
+});
+$('book-picker-close-btn').addEventListener('click', () => $('book-picker-modal').classList.remove('open'));
+$('book-picker-modal').addEventListener('click', e => { if (e.target === $('book-picker-modal')) $('book-picker-modal').classList.remove('open'); });
+
+// ─── Screens ──────────────────────────────────────────────────────────────────
+function showScreen(name) {
+  $('book-setup-screen').style.display     = name === 'book-setup'     ? 'flex' : 'none';
+  $('chapter-select-screen').style.display = name === 'chapter-select' ? 'flex' : 'none';
+  $('loading-screen').style.display        = name === 'loading'        ? 'flex' : 'none';
+  $('chat-screen').style.display           = name === 'chat'           ? 'flex' : 'none';
+  $('summary-screen').style.display        = name === 'summary'        ? 'flex' : 'none';
+}
+function setLoading(text, pct) { $('loading-text').textContent = text; $('loading-progress-fill').style.width = pct + '%'; }
+function showChapterSelect() { renderChapterGrid(); updateWeakBadges(); showScreen('chapter-select'); }
+
+// ─── Book drop zone ───────────────────────────────────────────────────────────
+const bookDropZone  = $('book-drop-zone');
+const bookFileInput = $('book-file-input');
+bookDropZone.addEventListener('click', () => bookFileInput.click());
+bookDropZone.addEventListener('dragover', e => { e.preventDefault(); bookDropZone.classList.add('drag-over'); });
+bookDropZone.addEventListener('dragleave', () => bookDropZone.classList.remove('drag-over'));
+bookDropZone.addEventListener('drop', e => {
+  e.preventDefault(); bookDropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f?.type === 'application/pdf') processBookFile(f); else alert('Please upload a PDF file.');
+});
+bookFileInput.addEventListener('change', () => { if (bookFileInput.files[0]) processBookFile(bookFileInput.files[0]); });
+
+async function processBookFile(file) {
+  if (!state.apiKey) { alert('Please save your Gemini API key first.'); $('api-key-input').focus(); return; }
+  const bookName = file.name.replace(/\.pdf$/i, '').replace(/[-_]+/g, ' ').trim();
+  showScreen('loading'); setLoading('Reading PDF…', 5);
+  try {
+    const buffer = await file.arrayBuffer();
+    setLoading('Parsing PDF structure…', 15);
+    const pdf = await pdfjsLib.getDocument({ data: buffer.slice(0) }).promise;
+    setLoading(`Detecting chapters (${pdf.numPages} pages)…`, 25);
+    const chapters = await detectChapters(pdf);
+    if (!chapters.length) throw new Error('Could not detect any chapters. Is this the correct PDF?');
+    setLoading(`Saving… (${chapters.length} chapters found)`, 80);
+    const id = genId();
+    const book = { id, name: bookName, chapters, addedAt: Date.now() };
+    const books = getBooks();
+    books.push(book);
+    saveBooks(books);
+    await dbSet(`book_pdf_${id}`, buffer);
+    state.bookId = id; state.bookName = bookName; state.bookPdf = pdf; state.chapters = chapters;
+    setActiveBookId(id);
+    setLoading('Done!', 100);
+    updateBookSwitcher(); renderSidebar(); updateWeakBadges();
+    launchRandom();
+  } catch (err) { alert('Error: ' + err.message); showScreen('book-setup'); }
+}
+
+// ─── Chapter detection ────────────────────────────────────────────────────────
+const NOISE_RE = /^(cover|preface|copyright|table of contents|contents|index|about the author|foreword|dedication|colophon|bibliography|acknowledgments|who this book is for|using code examples|how to contact|half title|title page|praise for)/i;
+
+async function detectChapters(pdf) {
+  try {
+    const outline = await pdf.getOutline();
+    if (outline && outline.length) {
+      const ch = await chaptersFromOutline(pdf, outline);
+      if (ch.length >= 2) return ch;
+    }
+  } catch { /* fall through */ }
+  return chaptersFromTextScan(pdf);
+}
+
+async function resolveDestPage(pdf, dest) {
+  if (!dest) return null;
+  try {
+    let arr = dest;
+    if (typeof dest === 'string') arr = await pdf.getDestination(dest);
+    if (!arr || !arr.length) return null;
+    return await pdf.getPageIndex(arr[0]) + 1;
+  } catch { return null; }
+}
+
+async function chaptersFromOutline(pdf, outline) {
+  const allItems = [];
+  async function walk(nodes, depth) {
+    for (const node of nodes) {
+      const page = await resolveDestPage(pdf, node.dest);
+      if (page !== null && node.title) allItems.push({ title: node.title.trim(), startPage: page, depth });
+      if (node.items && node.items.length) await walk(node.items, depth + 1);
+    }
+  }
+  await walk(outline, 0);
+  if (!allItems.length) return [];
+
+  const depth1 = allItems.filter(i => i.depth === 1 && !NOISE_RE.test(i.title));
+  const depth0 = allItems.filter(i => i.depth === 0 && !NOISE_RE.test(i.title));
+  let candidates = depth1.length >= 2 ? depth1 : depth0;
+
+  candidates.sort((a, b) => a.startPage - b.startPage);
+  const chapters = [];
+  for (const c of candidates)
+    if (!chapters.length || c.startPage !== chapters[chapters.length - 1].startPage)
+      chapters.push({ title: c.title, startPage: c.startPage });
+
+  for (let i = 0; i < chapters.length; i++)
+    chapters[i].endPage = i + 1 < chapters.length ? chapters[i + 1].startPage - 1 : pdf.numPages;
+  return chapters;
+}
+
+async function chaptersFromTextScan(pdf) {
+  const re = /^(chapter\s+\d+|part\s+[IVXivx\d]+|\d+\.\s+\w)/i;
+  const chapters = [], total = pdf.numPages;
+  for (let p = 1; p <= total; p++) {
+    if (p % 20 === 0) setLoading(`Scanning pages… (${p}/${total})`, 25 + Math.round((p / total) * 50));
+    try {
+      const tc = await (await pdf.getPage(p)).getTextContent();
+      const lines = tc.items.map(i => i.str.trim()).filter(s => s.length > 2).slice(0, 8);
+      for (const line of lines)
+        if (re.test(line) && line.length < 80 && !NOISE_RE.test(line)) { chapters.push({ title: line, startPage: p }); break; }
+    } catch { /* skip */ }
+  }
+  for (let i = 0; i < chapters.length; i++)
+    chapters[i].endPage = i + 1 < chapters.length ? chapters[i + 1].startPage - 1 : pdf.numPages;
+  return chapters;
+}
+
+// ─── Weak spots ───────────────────────────────────────────────────────────────
+function getWeakSpots(bookId) {
+  try { return JSON.parse(localStorage.getItem('weak_spots') || '[]').filter(s => !bookId || s.bookId === bookId); } catch { return []; }
+}
+function getAllWeakSpots() { try { return JSON.parse(localStorage.getItem('weak_spots') || '[]'); } catch { return []; } }
+function saveWeakSpot(question, chapterIdx, chapterName, feedback) {
+  const all = getAllWeakSpots();
+  if (all.some(s => s.question === question && s.chapterIdx === chapterIdx && s.bookId === state.bookId)) return;
+  all.push({ id: Date.now(), question, chapterIdx, chapterName, bookId: state.bookId, feedback, addedAt: Date.now(), attempts: 0 });
+  localStorage.setItem('weak_spots', JSON.stringify(all));
+  updateWeakBadges();
+}
+function removeWeakSpot(question, chapterIdx) {
+  localStorage.setItem('weak_spots', JSON.stringify(getAllWeakSpots().filter(s => !(s.question === question && s.chapterIdx === chapterIdx && s.bookId === state.bookId))));
+  updateWeakBadges();
+}
+function updateWeakBadges() {
+  const n = getWeakSpots(state.bookId).length;
+  [$('sidebar-weak-count'), $('cs-weak-count')].forEach(el => { if (el) el.textContent = n; });
+  [$('sidebar-weak-btn'), $('cs-weak-btn')].forEach(el => { if (el) el.style.display = n > 0 ? '' : 'none'; });
+}
+
+// ─── Sidebar + grid ───────────────────────────────────────────────────────────
+function getBestScore(idx) {
+  const sessions = getHistory().filter(s => s.bookId === state.bookId && (s.chapterIdx === idx || s.chapterName === state.chapters[idx]?.title));
+  if (!sessions.length) return null;
+  return sessions.reduce((b, s) => s.total ? Math.max(b, Math.round((s.correct / s.total) * 100)) : b, 0);
+}
+function scoreClass(p) { return p >= 80 ? 'good' : p >= 50 ? 'ok' : 'bad'; }
+
+function renderSidebar() {
+  const el = $('sidebar-chapters'), acts = $('sidebar-actions');
+  if (!state.chapters.length) { el.innerHTML = '<div class="sidebar-empty">No chapters loaded.</div>'; acts.style.display = 'none'; return; }
+  acts.style.display = '';
+  el.innerHTML = state.chapters.map((ch, i) => {
+    const score = getBestScore(i);
+    const badge = score !== null ? `<span class="ch-score ${scoreClass(score)}">${score}%</span>` : '';
+    return `<div class="ch-item${state.activeChapterIdx === i ? ' active' : ''}" data-idx="${i}">
+      <div class="ch-item-info"><div class="ch-title">${escHtml(ch.title)}</div><div class="ch-meta">pp. ${ch.startPage}–${ch.endPage}</div></div>${badge}
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.ch-item').forEach(el =>
+    el.addEventListener('click', () => { $('sidebar').classList.remove('open'); launchQuiz(+el.dataset.idx); })
+  );
+}
+
+function renderChapterGrid() {
+  const weak = getWeakSpots(state.bookId);
+  $('cs-title').textContent = state.bookName || 'Select a chapter';
+  $('chapter-grid').innerHTML = state.chapters.map((ch, i) => {
+    const score = getBestScore(i);
+    const pages = ch.endPage - ch.startPage + 1;
+    const wk = weak.filter(w => w.chapterIdx === i).length;
+    const badges = [];
+    if (score !== null) badges.push(`<span class="card-score ${scoreClass(score)}">${score}%</span>`);
+    if (wk) badges.push(`<span class="card-weak-dot">⚠ ${wk} weak</span>`);
+    return `<div class="chapter-card${wk ? ' has-weak' : ''}" data-idx="${i}">
+      <div class="card-title">${escHtml(ch.title)}</div>
+      <div class="card-meta">pp. ${ch.startPage}–${ch.endPage} · ${pages}p</div>
+      ${badges.length ? `<div class="card-badges">${badges.join('')}</div>` : ''}
+    </div>`;
+  }).join('');
+  $('chapter-grid').querySelectorAll('.chapter-card').forEach(el =>
+    el.addEventListener('click', () => launchQuiz(+el.dataset.idx))
+  );
+}
+
+// ─── Random ───────────────────────────────────────────────────────────────────
+function launchRandom() {
+  if (!state.chapters.length) { showChapterSelect(); return; }
+  launchQuiz(Math.floor(Math.random() * state.chapters.length));
+}
+
+// ─── Launch quiz ──────────────────────────────────────────────────────────────
+async function launchQuiz(idx) {
+  state.mode = 'normal'; state.activeChapterIdx = idx;
+  const ch = state.chapters[idx];
+  showScreen('loading'); setLoading(`Extracting "${ch.title}"…`, 20);
+  try {
+    state.chapterText = (await extractChapterText(state.bookPdf, ch.startPage, ch.endPage)).slice(0, 32000);
+    setLoading('Generating questions with Gemini…', 65);
+    await startQuiz(ch.title);
+  } catch (err) { alert('Error: ' + err.message); showChapterSelect(); }
+}
+
+async function launchWeakSession() {
+  const spots = getWeakSpots(state.bookId);
+  if (!spots.length) { alert('No weak spots saved for this book!'); return; }
+  state.mode = 'weak'; state.activeChapterIdx = -1;
+  spots.sort((a, b) => b.attempts - a.attempts || a.addedAt - b.addedAt);
+  state.weakQueue = spots.slice(0, state.numQuestions);
+  state.questions = state.weakQueue.map(s => s.question);
+  state.currentQ = 0; state.answers = [];
+
+  showScreen('loading'); setLoading('Loading weak spots…', 20);
+  state.weakTextCache = {};
+  for (const spot of state.weakQueue) {
+    if (!(spot.chapterIdx in state.weakTextCache)) {
+      const ch = state.chapters[spot.chapterIdx];
+      if (ch) {
+        setLoading(`Loading "${ch.title}"…`, 30);
+        state.weakTextCache[spot.chapterIdx] = (await extractChapterText(state.bookPdf, ch.startPage, ch.endPage)).slice(0, 32000);
+      }
+    }
+  }
+  $('messages').innerHTML = '';
+  $('chapter-label').innerHTML = `<strong>🔁 Weak Spots Review</strong>`;
+  updateProgress(); renderSidebar(); showScreen('chat');
+  addMessage('system', `🔁 <strong>Weak Spots Review</strong><br/>${state.questions.length} question(s) you previously struggled with.`);
+  askNextQuestion();
+}
+
+async function extractChapterText(pdf, startPage, endPage) {
+  const pages = [], cap = Math.min(endPage, startPage + 59), total = cap - startPage + 1;
+  for (let p = startPage; p <= cap; p++) {
+    if ((p - startPage) % 5 === 0) setLoading(`Reading page ${p}…`, 20 + Math.round(((p - startPage) / total) * 40));
+    const tc = await (await pdf.getPage(p)).getTextContent();
+    pages.push(tc.items.map(i => i.str).join(' '));
+  }
+  return pages.join('\n');
+}
+
+// ─── Quiz ─────────────────────────────────────────────────────────────────────
+async function startQuiz(chapterTitle) {
+  state.questions = []; state.currentQ = 0; state.answers = [];
+  const raw = await callGemini([{ role:'user', parts:[{ text: buildGenerationPrompt(state.chapterText, state.numQuestions) }] }]);
+  const questions = parseQuestions(raw);
+  if (!questions.length) throw new Error('Could not parse questions from Gemini. Try again.');
+  state.questions = questions;
+  $('messages').innerHTML = '';
+  $('chapter-label').innerHTML = `<strong>${escHtml(chapterTitle)}</strong>`;
+  updateProgress(); renderSidebar(); showScreen('chat');
+  addMessage('system', `📚 <strong>${escHtml(chapterTitle)}</strong><br/>${questions.length} question(s) ready. Good luck!`);
+  askNextQuestion();
+}
+
+function buildGenerationPrompt(text, n) {
+  return `You are a pedagogical assistant and Python expert, specialized in the book being studied.
+
+Chapter excerpt:
+--- START ---
+${text}
+--- END ---
+
+Generate exactly ${n} varied, relevant quiz questions about this excerpt.
+- Mix types: concepts, code reading/writing, practical use cases.
+- Each question answerable from the excerpt alone.
+- Number clearly: "Q1:", "Q2:", etc.
+- Questions only, no answers.`;
+}
+
+function parseQuestions(raw) { return raw.split(/\n?Q\d+:/i).map(s => s.trim()).filter(Boolean); }
+
+function askNextQuestion() {
+  if (state.currentQ >= state.questions.length) { endQuiz(); return; }
+  addMessage('question', state.questions[state.currentQ]);
+  $('answer-input').disabled = false; $('send-btn').disabled = false; $('answer-input').focus();
+}
+
+async function submitAnswer() {
+  const answer = $('answer-input').value.trim(); if (!answer) return;
+  $('answer-input').value = ''; $('answer-input').style.height = 'auto';
+  $('answer-input').disabled = true; $('send-btn').disabled = true;
+  addMessage('user', answer);
+  const feedbackEl = addMessage('feedback', '⏳ Evaluating…');
+  try {
+    const ctx = state.mode === 'weak'
+      ? (state.weakTextCache[state.weakQueue[state.currentQ]?.chapterIdx] || '')
+      : state.chapterText;
+    const feedback = await callGemini([{ role:'user', parts:[{ text: buildFeedbackPrompt(state.questions[state.currentQ], answer, ctx) }] }]);
+    feedbackEl.innerHTML = formatMarkdown(feedback);
+    state.answers.push({ question: state.questions[state.currentQ], userAnswer: answer, feedback });
+    showAssessRow(state.currentQ, feedback);
+  } catch (err) {
+    feedbackEl.textContent = '⚠ Error: ' + err.message;
+    $('answer-input').disabled = false; $('send-btn').disabled = false;
+  }
+}
+
+function buildFeedbackPrompt(question, answer, context) {
+  return `You are a pedagogical assistant and expert in the book being studied.
+
+Chapter excerpt:
+--- START ---
+${context.slice(0, 15000)}
+--- END ---
+
+Question: ${question}
+Student's answer: ${answer}
+
+Evaluate:
+1. What is correct (specific).
+2. Mistakes or gaps.
+3. Complete accurate answer with code examples if relevant.
+4. Be kind, encouraging, precise.
+5. If fully correct, congratulate briefly.
+
+Reply in English. Use markdown for code blocks.`;
+}
+
+// ─── Self-assessment ──────────────────────────────────────────────────────────
+function showAssessRow(qIdx, feedback) {
+  const row = document.createElement('div');
+  row.className = 'assess-row';
+  row.innerHTML = `<span>Did you get it?</span>
+    <button class="assess-btn btn-success" data-r="got">✓ Got it</button>
+    <button class="assess-btn btn-warn" data-r="missed">✗ Need to review</button>`;
+  $('messages').appendChild(row);
+  $('messages').scrollTop = $('messages').scrollHeight;
+  row.querySelectorAll('.assess-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const got = btn.dataset.r === 'got';
+      const q = state.questions[qIdx];
+      const chIdx = state.mode === 'weak' ? (state.weakQueue[qIdx]?.chapterIdx ?? -1) : state.activeChapterIdx;
+      const chName = state.mode === 'weak' ? (state.weakQueue[qIdx]?.chapterName ?? '') : (state.chapters[state.activeChapterIdx]?.title ?? '');
+      if (got) {
+        if (state.mode === 'weak') removeWeakSpot(q, chIdx);
+        row.innerHTML = `<span style="color:var(--success);">✓ Marked as understood</span>`;
+      } else {
+        saveWeakSpot(q, chIdx, chName, feedback);
+        if (state.mode === 'weak') {
+          const all = getAllWeakSpots(), spot = all.find(s => s.question === q && s.chapterIdx === chIdx && s.bookId === state.bookId);
+          if (spot) { spot.attempts++; localStorage.setItem('weak_spots', JSON.stringify(all)); }
+        }
+        row.innerHTML = `<span style="color:var(--warning);">⚠ Saved for review</span>`;
+      }
+      state.currentQ++; updateProgress(); setTimeout(askNextQuestion, 500);
+    });
+  });
+}
+
+function endQuiz() {
+  const correct = state.answers.filter(a => /correct|great|excellent|perfect|well done|congratulations/i.test(a.feedback)).length;
+  const ch = state.mode === 'weak' ? null : state.chapters[state.activeChapterIdx];
+  const session = { bookId: state.bookId, chapterIdx: state.activeChapterIdx, chapterName: ch?.title ?? 'Weak Spots Review', mode: state.mode, date: Date.now(), correct, total: state.questions.length, answers: state.answers };
+  saveSession(session); state.lastSession = session;
+  const pct = Math.round((correct / state.questions.length) * 100);
+  $('summary-score').textContent = pct + '%';
+  $('summary-chapter').textContent = session.chapterName;
+  $('summary-detail').textContent = `${correct} / ${state.questions.length} answered correctly`;
+  const wn = getWeakSpots(state.bookId).length;
+  $('summary-weak').textContent = wn ? `⚠ ${wn} question(s) still in your review list` : '';
+  $('summary-weak').style.display = wn ? '' : 'none';
+  renderSidebar(); updateWeakBadges(); showScreen('summary');
+}
+
+// ─── History ──────────────────────────────────────────────────────────────────
+function getHistory() { try { return JSON.parse(localStorage.getItem('quiz_history') || '[]'); } catch { return []; } }
+function saveSession(s) { const h = getHistory(); h.unshift(s); localStorage.setItem('quiz_history', JSON.stringify(h.slice(0, 100))); }
+
+// ─── Gemini API ───────────────────────────────────────────────────────────────
+async function callGemini(contents) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.model}:generateContent?key=${encodeURIComponent(state.apiKey)}`;
+  const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ contents, generationConfig:{ temperature:0.7, maxOutputTokens:2048 },
+      systemInstruction:{ parts:[{ text:'You are a pedagogical assistant and expert in the book being studied. Always reply in English.' }] } })
+  });
+  if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error('Gemini API error: ' + (e?.error?.message || res.statusText)); }
+  return (await res.json()).candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function addMessage(type, html) {
+  const div = document.createElement('div'); div.className = `msg msg-${type}`; div.innerHTML = html;
+  $('messages').appendChild(div); $('messages').scrollTop = $('messages').scrollHeight; return div;
+}
+function updateProgress() {
+  const pct = state.questions.length ? Math.round((state.currentQ / state.questions.length) * 100) : 0;
+  $('progress-fill').style.width = pct + '%'; $('progress-label').textContent = `${state.currentQ} / ${state.questions.length}`;
+}
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function formatMarkdown(text) {
+  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, l, c) => `<pre><code>${escHtml(c.trim())}</code></pre>`);
+  text = text.replace(/`([^`]+)`/g, (_, c) => `<code>${escHtml(c)}</code>`);
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  return text.replace(/\n/g, '<br/>');
+}
+
+// ─── API key ──────────────────────────────────────────────────────────────────
+function saveApiKey(key) {
+  key = key.trim(); if (!key) { alert('Enter a valid key.'); return; }
+  state.apiKey = key; localStorage.setItem('gemini_api_key', key); $('api-card').style.display = 'none';
+}
+$('save-key-btn').addEventListener('click', () => saveApiKey($('api-key-input').value));
+$('api-key-input').addEventListener('keydown', e => { if (e.key === 'Enter') saveApiKey($('api-key-input').value); });
+
+// ─── Input ────────────────────────────────────────────────────────────────────
+$('answer-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitAnswer(); } });
+$('answer-input').addEventListener('input', () => { $('answer-input').style.height = 'auto'; $('answer-input').style.height = Math.min($('answer-input').scrollHeight, 140) + 'px'; });
+$('send-btn').addEventListener('click', submitAnswer);
+
+// ─── Navigation ───────────────────────────────────────────────────────────────
+$('back-btn').addEventListener('click', showChapterSelect);
+$('choose-chapter-btn').addEventListener('click', showChapterSelect);
+$('another-random-btn').addEventListener('click', launchRandom);
+$('cs-random-btn').addEventListener('click', launchRandom);
+$('sidebar-random-btn').addEventListener('click', () => { $('sidebar').classList.remove('open'); launchRandom(); });
+$('cs-weak-btn').addEventListener('click', launchWeakSession);
+$('sidebar-weak-btn').addEventListener('click', () => { $('sidebar').classList.remove('open'); launchWeakSession(); });
+
+$('review-btn').addEventListener('click', () => {
+  if (!state.lastSession) return;
+  const s = state.lastSession;
+  $('messages').innerHTML = '';
+  $('chapter-label').innerHTML = `Review: <strong>${escHtml(s.chapterName)}</strong>`;
+  $('progress-fill').style.width = '100%'; $('progress-label').textContent = `${s.correct} / ${s.total}`;
+  $('answer-input').disabled = true; $('send-btn').disabled = true;
+  addMessage('system', `📖 Review — ${escHtml(s.chapterName)}`);
+  s.answers.forEach((a, i) => { addMessage('question', `Q${i+1}: ${escHtml(a.question)}`); addMessage('user', escHtml(a.userAnswer)); addMessage('feedback', formatMarkdown(a.feedback)); });
+  showScreen('chat');
+});
+
+$('sidebar-toggle-btn').addEventListener('click', () => $('sidebar').classList.toggle('open'));
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+$('settings-btn').addEventListener('click', () => {
+  $('settings-api-input').value = state.apiKey ? '••••••••' : '';
+  $('model-input').value = state.model; $('num-questions-input').value = state.numQuestions;
+  $('model-list').style.display = 'none'; $('settings-modal').classList.add('open');
+});
+$('modal-close-btn').addEventListener('click', () => $('settings-modal').classList.remove('open'));
+$('settings-modal').addEventListener('click', e => { if (e.target === $('settings-modal')) $('settings-modal').classList.remove('open'); });
+$('settings-save-btn').addEventListener('click', () => {
+  const key = $('settings-api-input').value.trim();
+  if (key && !key.startsWith('••')) saveApiKey(key);
+  const m = $('model-input').value.trim(); if (m) { state.model = m; localStorage.setItem('gemini_model', m); }
+  const n = parseInt($('num-questions-input').value); if (n >= 1 && n <= 15) { state.numQuestions = n; localStorage.setItem('num_questions', n); }
+  $('settings-modal').classList.remove('open');
+});
+$('list-models-btn').addEventListener('click', async () => {
+  const key = (() => { const v = $('settings-api-input').value.trim(); return (v && !v.startsWith('••')) ? v : state.apiKey; })();
+  if (!key) { alert('Save your API key first.'); return; }
+  const el = $('model-list'); el.style.display = 'block';
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:0.78rem;">Loading…</span>';
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`);
+    const data = await res.json(); if (!res.ok) throw new Error(data?.error?.message || res.statusText);
+    const models = (data.models || []).filter(m => m.supportedGenerationMethods?.includes('generateContent')).map(m => m.name.replace('models/', ''));
+    el.innerHTML = models.length
+      ? models.map(m => `<div style="padding:0.25rem 0.4rem;cursor:pointer;border-radius:4px;font-size:0.78rem;font-family:var(--font-mono);color:var(--text);"
+          onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''"
+          onclick="document.getElementById('model-input').value='${m}';document.getElementById('model-list').style.display='none';">${m}</div>`).join('')
+      : '<span style="color:var(--text-dim);font-size:0.78rem;">No models found.</span>';
+  } catch (err) { el.innerHTML = `<span style="color:var(--danger);font-size:0.78rem;">${escHtml(err.message)}</span>`; }
+});
+$('clear-weak-btn').addEventListener('click', () => {
+  if (!confirm('Clear all weak spots for this book?')) return;
+  localStorage.setItem('weak_spots', JSON.stringify(getAllWeakSpots().filter(s => s.bookId !== state.bookId)));
+  updateWeakBadges(); if ($('chapter-select-screen').style.display !== 'none') renderChapterGrid();
+  alert('Weak spots cleared.');
+});
+$('clear-history-btn').addEventListener('click', () => {
+  if (!confirm('Delete all quiz history?')) return;
+  localStorage.removeItem('quiz_history'); renderSidebar();
+  if ($('chapter-select-screen').style.display !== 'none') renderChapterGrid(); alert('History cleared.');
+});
+
+// ─── PWA ──────────────────────────────────────────────────────────────────────
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); state.deferInstall = e; $('install-btn').style.display = 'inline-block'; });
+$('install-btn').addEventListener('click', async () => {
+  if (!state.deferInstall) return;
+  state.deferInstall.prompt();
+  const { outcome } = await state.deferInstall.userChoice;
+  if (outcome === 'accepted') $('install-btn').style.display = 'none';
+  state.deferInstall = null;
+});
+window.addEventListener('appinstalled', () => { $('install-btn').style.display = 'none'; });
+if ('serviceWorker' in navigator)
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(console.error));
+
+init();
+</script>
+</body>
+</html>
