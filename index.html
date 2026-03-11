@@ -318,7 +318,7 @@
     <div class="form-group">
       <label>Gemini Model</label>
       <div class="input-row">
-        <input type="text" id="model-input" placeholder="gemini-1.5-flash" style="font-size:0.78rem;" />
+        <input type="text" id="model-input" placeholder="gemini-2.5-flash" style="font-size:0.78rem;" />
         <button class="btn btn-ghost" id="list-models-btn" style="font-size:0.78rem;white-space:nowrap;">🔍 List</button>
       </div>
       <div id="model-list"></div>
@@ -376,7 +376,7 @@ function genId()          { return Date.now().toString(36) + Math.random().toStr
 
 // ─── State ────────────────────────────────────────────────────────────────────
 const state = {
-  apiKey: '', model: 'gemini-1.5-flash', numQuestions: 4, deferInstall: null,
+  apiKey: '', model: 'gemini-2.5-flash', numQuestions: 4, deferInstall: null,
   // Active book (derived from localStorage)
   bookId: '', bookName: '', bookPdf: null, chapters: [],
   // Session
@@ -391,7 +391,7 @@ const $ = id => document.getElementById(id);
 // ─── Init ─────────────────────────────────────────────────────────────────────
 async function init() {
   state.apiKey       = localStorage.getItem('gemini_api_key') || '';
-  state.model        = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
+  state.model        = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
   state.numQuestions = parseInt(localStorage.getItem('num_questions') || '4');
   if (state.apiKey) $('api-card').style.display = 'none';
 

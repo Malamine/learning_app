@@ -145,7 +145,7 @@ Your app will be live at `https://YOUR_USERNAME.github.io/book-quiz` within a mi
 | Layer | Technology |
 |---|---|
 | Frontend | HTML + CSS + Vanilla JavaScript (single `index.html`) |
-| AI | Google Gemini API (`gemini-1.5-flash` — free tier) |
+| AI | Google Gemini API (`gemini-2.5-flash` — free tier) |
 | PDF parsing | [PDF.js](https://mozilla.github.io/pdf.js/) by Mozilla |
 | Storage | `localStorage` (settings, history) + `IndexedDB` (book PDFs) |
 | Offline | Service Worker + Cache API |
