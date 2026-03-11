@@ -340,6 +340,13 @@
       <input type="text" id="num-questions-input" placeholder="4" style="max-width:80px;" />
     </div>
     <div class="form-group">
+      <label>Daily Reminder</label>
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <button class="btn btn-primary" id="reminder-btn" style="font-size:0.8rem;">🔔 Enable daily reminder</button>
+        <span id="reminder-status" style="font-size:0.75rem;color:var(--text-dim);"></span>
+      </div>
+    </div>
+    <div class="form-group">
       <label>Weak spots &amp; history</label>
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
         <button class="btn btn-ghost" id="clear-weak-btn" style="font-size:0.8rem;">🗑 Clear weak spots</button>
@@ -999,6 +1006,51 @@ $('clear-history-btn').addEventListener('click', () => {
   localStorage.removeItem('quiz_history'); renderSidebar();
   if ($('chapter-select-screen').style.display !== 'none') renderChapterGrid(); alert('History cleared.');
 });
+
+// ─── Daily reminder ───────────────────────────────────────────────────────────
+async function updateReminderStatus() {
+  const btn = $('reminder-btn');
+  const status = $('reminder-status');
+  if (!('serviceWorker' in navigator) || !('periodicSync' in (await navigator.serviceWorker.ready))) {
+    btn.textContent = '🔔 Daily reminder';
+    btn.disabled = true;
+    status.textContent = 'Not supported on this browser';
+    return;
+  }
+  const sw = await navigator.serviceWorker.ready;
+  const tags = await sw.periodicSync.getTags();
+  const active = tags.includes('daily-quiz-reminder');
+  btn.textContent = active ? '🔕 Disable reminder' : '🔔 Enable daily reminder';
+  btn.className = active ? 'btn btn-warn' : 'btn btn-primary';
+  btn.style.fontSize = '0.8rem';
+  status.textContent = active ? 'You\'ll be reminded every day ✓' : '';
+}
+
+$('reminder-btn').addEventListener('click', async () => {
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { alert('Please allow notifications to enable reminders.'); return; }
+
+    const sw = await navigator.serviceWorker.ready;
+    if (!('periodicSync' in sw)) { alert('Periodic background sync is not supported on this browser.\n\nTry Chrome on Android with the app installed.'); return; }
+
+    const syncPerm = await navigator.permissions.query({ name: 'periodic-background-sync' });
+    if (syncPerm.state !== 'granted') { alert('Background sync permission denied.\n\nMake sure the app is installed on your home screen and try again.'); return; }
+
+    const tags = await sw.periodicSync.getTags();
+    if (tags.includes('daily-quiz-reminder')) {
+      await sw.periodicSync.unregister('daily-quiz-reminder');
+    } else {
+      await sw.periodicSync.register('daily-quiz-reminder', { minInterval: 24 * 60 * 60 * 1000 });
+    }
+    await updateReminderStatus();
+  } catch (err) {
+    alert('Could not set reminder: ' + err.message);
+  }
+});
+
+// Refresh reminder status each time settings opens
+$('settings-btn').addEventListener('click', updateReminderStatus, true);
 
 // ─── PWA ──────────────────────────────────────────────────────────────────────
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); state.deferInstall = e; $('install-btn').style.display = 'inline-block'; });

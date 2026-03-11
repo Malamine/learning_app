@@ -1,4 +1,4 @@
-const CACHE_NAME = 'book-quiz-v3';
+const CACHE_NAME = 'book-quiz-v4';
 
 const STATIC_ASSETS = [
   './',
@@ -10,7 +10,6 @@ const STATIC_ASSETS = [
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
 ];
 
-// Install: cache static assets
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache =>
@@ -20,7 +19,6 @@ self.addEventListener('install', event => {
   self.skipWaiting();
 });
 
-// Activate: clean up old caches
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
@@ -30,17 +28,12 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Fetch
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
-
-  // Always go online for Gemini API calls
   if (url.hostname.includes('googleapis.com')) {
     event.respondWith(fetch(event.request));
     return;
   }
-
-  // Cache-first for everything else
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
@@ -53,6 +46,48 @@ self.addEventListener('fetch', event => {
       }).catch(() => {
         if (event.request.mode === 'navigate') return caches.match('./index.html');
       });
+    })
+  );
+});
+
+// ─── Daily reminder via Periodic Background Sync ─────────────────────────────
+self.addEventListener('periodicsync', event => {
+  if (event.tag === 'daily-quiz-reminder') {
+    event.waitUntil(showDailyReminder());
+  }
+});
+
+async function showDailyReminder() {
+  const messages = [
+    { title: '📚 Quiz time!',        body: 'Your daily chapter is waiting. Keep the streak going!' },
+    { title: '🧠 Time to study!',    body: 'A few questions a day keeps forgetting away.' },
+    { title: '📖 Daily quiz ready',  body: 'Open the app and test yourself on a new chapter.' },
+    { title: '🎓 Study reminder',    body: 'Don\'t break your streak — quiz yourself today!' },
+    { title: '⚡ Quick quiz!',       body: '5 minutes of focused questions. You\'ve got this.' },
+  ];
+  const msg = messages[Math.floor(Math.random() * messages.length)];
+  await self.registration.showNotification(msg.title, {
+    body: msg.body,
+    icon: './icon-192.png',
+    badge: './icon-192.png',
+    tag: 'daily-quiz',
+    renotify: true,
+    data: { url: self.registration.scope },
+  });
+}
+
+// ─── Tap notification → open app ─────────────────────────────────────────────
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const appUrl = event.notification.data?.url || self.registration.scope;
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      // Focus if already open
+      for (const client of list) {
+        if (client.url.startsWith(appUrl) && 'focus' in client) return client.focus();
+      }
+      // Otherwise open a new window
+      return clients.openWindow(appUrl);
     })
   );
 });
