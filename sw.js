@@ -51,11 +51,11 @@ self.addEventListener('fetch', event => {
 });
 
 // ─── Reminder config (received from app via postMessage) ─────────────────────
-let reminderTime = '09:00'; // default, overridden by app
+let reminderTimes = ['09:00']; // default, overridden by app
 
 self.addEventListener('message', event => {
   if (event.data?.type === 'REMINDER_CONFIG') {
-    reminderTime = event.data.time || '09:00';
+    reminderTimes = event.data.times || ['09:00'];
   }
 });
 
@@ -69,22 +69,29 @@ self.addEventListener('periodicsync', event => {
 async function maybeShowReminder() {
   const now = new Date();
   const today = now.toISOString().slice(0, 10); // "YYYY-MM-DD"
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
-  // Check if already notified today
-  const lastShown = await getStore('reminder_last_shown');
-  if (lastShown === today) return;
+  // Load which slots already fired today
+  const firedKey = `reminder_fired_${today}`;
+  let fired = [];
+  try { fired = JSON.parse(await getStore(firedKey) || '[]'); } catch { fired = []; }
 
-  // Check if we're past the user's preferred time (allow up to 6h window)
-  const [prefHour, prefMin] = reminderTime.split(':').map(Number);
-  const prefMinutes = prefHour * 60 + prefMin;
-  const nowMinutes  = now.getHours() * 60 + now.getMinutes();
-  if (nowMinutes < prefMinutes || nowMinutes > prefMinutes + 360) return;
-
-  await setStore('reminder_last_shown', today);
-  await showDailyReminder();
+  let notified = false;
+  for (const t of reminderTimes) {
+    if (fired.includes(t)) continue; // already shown this slot today
+    const [h, m] = t.split(':').map(Number);
+    const slotMinutes = h * 60 + m;
+    // Fire if within a 3h window after the scheduled time
+    if (nowMinutes >= slotMinutes && nowMinutes <= slotMinutes + 180) {
+      fired.push(t);
+      await showDailyReminder(t);
+      notified = true;
+    }
+  }
+  if (notified) await setStore(firedKey, JSON.stringify(fired));
 }
 
-async function showDailyReminder() {
+async function showDailyReminder(time) {
   const messages = [
     { title: '📚 Quiz time!',       body: 'Your daily chapter is waiting. Keep the streak going!' },
     { title: '🧠 Time to study!',   body: 'A few questions a day keeps forgetting away.' },
@@ -97,7 +104,7 @@ async function showDailyReminder() {
     body: msg.body,
     icon: './icon-192.png',
     badge: './icon-192.png',
-    tag: 'daily-quiz',
+    tag: `daily-quiz-${time}`,
     renotify: true,
     data: { url: self.registration.scope },
   });

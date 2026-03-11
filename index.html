@@ -340,18 +340,15 @@
       <input type="text" id="num-questions-input" placeholder="4" style="max-width:80px;" />
     </div>
     <div class="form-group">
-      <label>Daily Reminder</label>
-      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;">
-        <input type="time" id="reminder-time-input" value="09:00"
-          style="background:var(--code-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.85rem;padding:0.4rem 0.6rem;outline:none;max-width:120px;" />
-        <span style="font-size:0.75rem;color:var(--text-dim);">preferred time</span>
-      </div>
+      <label>Daily Reminders</label>
+      <div id="reminder-times-list" style="display:flex;flex-direction:column;gap:0.4rem;margin-bottom:0.6rem;"></div>
+      <button class="btn btn-ghost" id="add-reminder-time-btn" style="font-size:0.78rem;width:100%;margin-bottom:0.6rem;">+ Add reminder time</button>
       <div style="display:flex;align-items:center;gap:0.75rem;">
-        <button class="btn btn-primary" id="reminder-btn" style="font-size:0.8rem;">🔔 Enable daily reminder</button>
+        <button class="btn btn-primary" id="reminder-btn" style="font-size:0.8rem;">🔔 Enable reminders</button>
         <span id="reminder-status" style="font-size:0.75rem;color:var(--text-dim);"></span>
       </div>
       <p style="font-size:0.7rem;color:var(--text-dim);margin-top:0.5rem;line-height:1.4;">
-        Android will fire the reminder within a few hours of your chosen time to save battery.
+        Android fires each reminder within a few hours of your chosen time to save battery.
       </p>
     </div>
     <div class="form-group">
@@ -1015,68 +1012,101 @@ $('clear-history-btn').addEventListener('click', () => {
   if ($('chapter-select-screen').style.display !== 'none') renderChapterGrid(); alert('History cleared.');
 });
 
-// ─── Daily reminder ───────────────────────────────────────────────────────────
-function getReminderTime() { return localStorage.getItem('reminder_time') || '09:00'; }
-function saveReminderTime(t) { localStorage.setItem('reminder_time', t); }
+// ─── Daily reminders ──────────────────────────────────────────────────────────
+function getReminderTimes() {
+  try { return JSON.parse(localStorage.getItem('reminder_times') || '["09:00"]'); } catch { return ['09:00']; }
+}
+function saveReminderTimes(times) { localStorage.setItem('reminder_times', JSON.stringify(times)); }
 
-// Push reminder config to service worker via postMessage
 async function syncReminderConfig() {
   if (!('serviceWorker' in navigator)) return;
   const sw = await navigator.serviceWorker.ready;
-  sw.active?.postMessage({ type: 'REMINDER_CONFIG', time: getReminderTime() });
+  sw.active?.postMessage({ type: 'REMINDER_CONFIG', times: getReminderTimes() });
 }
+
+function renderReminderTimesList() {
+  const list = $('reminder-times-list');
+  const times = getReminderTimes();
+  list.innerHTML = times.map((t, i) => `
+    <div style="display:flex;align-items:center;gap:0.5rem;" data-i="${i}">
+      <input type="time" value="${t}" data-i="${i}"
+        style="background:var(--code-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.85rem;padding:0.4rem 0.6rem;outline:none;flex:1;" />
+      <button class="btn-icon reminder-del-btn" data-i="${i}" title="Remove" style="color:var(--danger);font-size:0.9rem;padding:0.3rem 0.5rem;">✕</button>
+    </div>`).join('');
+
+  list.querySelectorAll('input[type="time"]').forEach(inp =>
+    inp.addEventListener('change', async () => {
+      const times = getReminderTimes();
+      times[+inp.dataset.i] = inp.value;
+      saveReminderTimes(times);
+      await syncReminderConfig();
+      await updateReminderStatus();
+    })
+  );
+  list.querySelectorAll('.reminder-del-btn').forEach(btn =>
+    btn.addEventListener('click', async () => {
+      const times = getReminderTimes();
+      if (times.length === 1) { alert('Keep at least one reminder time.'); return; }
+      times.splice(+btn.dataset.i, 1);
+      saveReminderTimes(times);
+      renderReminderTimesList();
+      await syncReminderConfig();
+      await updateReminderStatus();
+    })
+  );
+}
+
+$('add-reminder-time-btn').addEventListener('click', async () => {
+  const times = getReminderTimes();
+  // Suggest next slot 6h after the last one
+  const last = times[times.length - 1] || '09:00';
+  const [h, m] = last.split(':').map(Number);
+  const next = `${String((h + 6) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  times.push(next);
+  saveReminderTimes(times);
+  renderReminderTimesList();
+  await syncReminderConfig();
+  await updateReminderStatus();
+});
 
 async function updateReminderStatus() {
   const btn = $('reminder-btn');
   const status = $('reminder-status');
-  $('reminder-time-input').value = getReminderTime();
+  renderReminderTimesList();
 
   if (!('serviceWorker' in navigator) || !('periodicSync' in (await navigator.serviceWorker.ready))) {
-    btn.textContent = '🔔 Daily reminder'; btn.disabled = true;
+    btn.textContent = '🔔 Enable reminders'; btn.disabled = true;
     status.textContent = 'Not supported on this browser'; return;
   }
   const sw = await navigator.serviceWorker.ready;
   const tags = await sw.periodicSync.getTags();
   const active = tags.includes('daily-quiz-reminder');
-  btn.textContent = active ? '🔕 Disable reminder' : '🔔 Enable daily reminder';
+  btn.textContent = active ? '🔕 Disable reminders' : '🔔 Enable reminders';
   btn.className = `btn ${active ? 'btn-warn' : 'btn-primary'}`;
   btn.style.fontSize = '0.8rem';
-  status.textContent = active ? `Every day around ${getReminderTime()} ✓` : '';
+  const times = getReminderTimes();
+  status.textContent = active ? `Active · ${times.join(', ')} ✓` : '';
 }
-
-$('reminder-time-input').addEventListener('change', async () => {
-  saveReminderTime($('reminder-time-input').value);
-  await syncReminderConfig();
-  const sw = await navigator.serviceWorker.ready;
-  const tags = await sw.periodicSync.getTags();
-  if (tags.includes('daily-quiz-reminder'))
-    $('reminder-status').textContent = `Every day around ${getReminderTime()} ✓`;
-});
 
 $('reminder-btn').addEventListener('click', async () => {
   try {
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') { alert('Please allow notifications to enable reminders.'); return; }
-
     const sw = await navigator.serviceWorker.ready;
-    if (!('periodicSync' in sw)) { alert('Periodic background sync is not supported.\n\nUse Chrome on Android with the app installed on your home screen.'); return; }
-
+    if (!('periodicSync' in sw)) { alert('Periodic background sync is not supported.\n\nUse Chrome on Android with the app installed.'); return; }
     const syncPerm = await navigator.permissions.query({ name: 'periodic-background-sync' });
     if (syncPerm.state !== 'granted') { alert('Background sync permission denied.\n\nMake sure the app is installed on your home screen and try again.'); return; }
-
     const tags = await sw.periodicSync.getTags();
     if (tags.includes('daily-quiz-reminder')) {
       await sw.periodicSync.unregister('daily-quiz-reminder');
     } else {
-      saveReminderTime($('reminder-time-input').value);
-      await sw.periodicSync.register('daily-quiz-reminder', { minInterval: 12 * 60 * 60 * 1000 });
+      await sw.periodicSync.register('daily-quiz-reminder', { minInterval: 4 * 60 * 60 * 1000 });
       await syncReminderConfig();
     }
     await updateReminderStatus();
   } catch (err) { alert('Could not set reminder: ' + err.message); }
 });
 
-// Refresh status when settings opens
 $('settings-btn').addEventListener('click', updateReminderStatus, true);
 
 // ─── PWA ──────────────────────────────────────────────────────────────────────
