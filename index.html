@@ -118,7 +118,13 @@
     #loading-screen { flex: 1; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; }
     .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .loading-text { color: var(--text-dim); font-size: 0.9rem; text-align: center; max-width: 300px; }
+    .loading-chapter {
+      font-size: 1rem; font-weight: 700; color: var(--text); text-align: center;
+      max-width: 320px; display: none; padding: 0.5rem 1rem;
+      background: var(--surface); border: 1px solid var(--accent); border-radius: 10px;
+    }
+    .loading-chapter .lc-label { font-size: 0.7rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.3rem; }
+    .loading-text { color: var(--text-dim); font-size: 0.85rem; text-align: center; max-width: 300px; }
     .loading-progress { width: 220px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
     .loading-progress-fill { height: 100%; background: var(--accent); transition: width 0.2s; width: 0%; }
 
@@ -252,6 +258,10 @@
     <!-- Loading -->
     <div id="loading-screen">
       <div class="spinner"></div>
+      <div class="loading-chapter" id="loading-chapter">
+        <div class="lc-label">🎲 Chapter selected</div>
+        <div id="loading-chapter-name"></div>
+      </div>
       <div class="loading-text" id="loading-text">Loading…</div>
       <div class="loading-progress"><div class="loading-progress-fill" id="loading-progress-fill"></div></div>
     </div>
@@ -413,7 +423,7 @@ async function loadBook(id, thenLaunch = true) {
   state.bookName = book.name;
   state.chapters = book.chapters;
 
-  showScreen('loading'); setLoading('Restoring book…', 10);
+  showScreen('loading'); setLoading('Restoring book…', 10, '');
   try {
     const buf = await dbGet(`book_pdf_${id}`);
     if (!buf) throw new Error('PDF not found in storage.');
@@ -513,7 +523,14 @@ function showScreen(name) {
   $('chat-screen').style.display           = name === 'chat'           ? 'flex' : 'none';
   $('summary-screen').style.display        = name === 'summary'        ? 'flex' : 'none';
 }
-function setLoading(text, pct) { $('loading-text').textContent = text; $('loading-progress-fill').style.width = pct + '%'; }
+function setLoading(text, pct, chapterTitle) {
+  $('loading-text').textContent = text;
+  $('loading-progress-fill').style.width = pct + '%';
+  if (chapterTitle !== undefined) {
+    $('loading-chapter-name').textContent = chapterTitle;
+    $('loading-chapter').style.display = chapterTitle ? 'block' : 'none';
+  }
+}
 function showChapterSelect() { renderChapterGrid(); updateWeakBadges(); showScreen('chapter-select'); }
 
 // ─── Book drop zone ───────────────────────────────────────────────────────────
@@ -532,7 +549,7 @@ bookFileInput.addEventListener('change', () => { if (bookFileInput.files[0]) pro
 async function processBookFile(file) {
   if (!state.apiKey) { alert('Please save your Gemini API key first.'); $('api-key-input').focus(); return; }
   const bookName = file.name.replace(/\.pdf$/i, '').replace(/[-_]+/g, ' ').trim();
-  showScreen('loading'); setLoading('Reading PDF…', 5);
+  showScreen('loading'); setLoading('Reading PDF…', 5, '');
   try {
     const buffer = await file.arrayBuffer();
     setLoading('Parsing PDF structure…', 15);
@@ -700,10 +717,10 @@ function launchRandom() {
 async function launchQuiz(idx) {
   state.mode = 'normal'; state.activeChapterIdx = idx;
   const ch = state.chapters[idx];
-  showScreen('loading'); setLoading(`Extracting "${ch.title}"…`, 20);
+  showScreen('loading'); setLoading('Extracting chapter text…', 20, ch.title);
   try {
     state.chapterText = (await extractChapterText(state.bookPdf, ch.startPage, ch.endPage)).slice(0, 32000);
-    setLoading('Generating questions with Gemini…', 65);
+    setLoading('Generating questions with Gemini…', 65, ch.title);
     await startQuiz(ch.title);
   } catch (err) { alert('Error: ' + err.message); showChapterSelect(); }
 }
