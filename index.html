@@ -146,6 +146,9 @@
     .msg-question::before { content: '🎓 '; }
     .msg-feedback { background: var(--surface2); border: 1px solid var(--border); align-self: flex-start; }
     .msg-user { background: var(--answer); border: 1px solid #2a5030; align-self: flex-end; white-space: pre-wrap; }
+    .msg-clarify { background: #1e2a3a; border: 1px solid #3a5070; align-self: flex-start; }
+    .msg-clarify::before { content: '💬 '; }
+    .msg-clarify-q { background: #1a1a2e; border: 1px solid #4a4a7a; align-self: flex-end; white-space: pre-wrap; font-style: italic; }
     .msg code { font-family: var(--font-mono); background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.85em; }
     .msg pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; overflow-x: auto; margin: 0.5rem 0; font-family: var(--font-mono); font-size: 0.82em; }
     .msg pre code { background: none; padding: 0; }
@@ -279,7 +282,12 @@
         <button class="btn-icon" id="back-btn" title="Back to chapters" style="font-size:0.85rem;padding:0.3rem 0.5rem;">✕</button>
       </div>
       <div id="messages"></div>
+      <div id="clarify-banner" style="display:none;padding:0.4rem 1rem;background:#1e2a3a;border-top:1px solid #3a5070;font-size:0.78rem;color:#7ab0e0;align-items:center;gap:0.5rem;">
+        <span>💬 Asking for precision — Gemini will clarify without evaluating your answer.</span>
+        <button class="btn btn-ghost" id="clarify-cancel-btn" style="font-size:0.72rem;padding:0.2rem 0.5rem;margin-left:auto;">Cancel</button>
+      </div>
       <div class="input-area">
+        <button class="btn btn-ghost" id="clarify-btn" title="Ask for precision before answering" style="font-size:0.82rem;white-space:nowrap;flex-shrink:0;">🤔 Ask first</button>
         <textarea id="answer-input" placeholder="Type your answer… (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
         <button class="btn btn-primary" id="send-btn">Send</button>
       </div>
@@ -404,7 +412,7 @@ const state = {
   // Active book (derived from localStorage)
   bookId: '', bookName: '', bookPdf: null, chapters: [],
   // Session
-  mode: 'normal', activeChapterIdx: -1,
+  mode: 'normal', activeChapterIdx: -1, clarifying: false,
   questions: [], currentQ: 0, answers: [],
   chapterText: '', weakTextCache: {},
   weakQueue: [], lastSession: null,
@@ -771,7 +779,7 @@ async function extractChapterText(pdf, startPage, endPage) {
   for (let p = startPage; p <= cap; p++) {
     if ((p - startPage) % 5 === 0) setLoading(`Reading page ${p}…`, 20 + Math.round(((p - startPage) / total) * 40));
     const tc = await (await pdf.getPage(p)).getTextContent();
-    pages.push(tc.items.map(i => i.str).join(' '));
+    pages.push(`[Page ${p}]\n${tc.items.map(i => i.str).join(' ')}`);
   }
   return pages.join('\n');
 }
@@ -793,6 +801,8 @@ async function startQuiz(chapterTitle) {
 function buildGenerationPrompt(text, n) {
   return `You are a pedagogical assistant and Python expert, specialized in the book being studied.
 
+The chapter text below includes page markers like [Page 42] so you know where each section comes from.
+
 Chapter excerpt:
 --- START ---
 ${text}
@@ -802,6 +812,7 @@ Generate exactly ${n} varied, relevant quiz questions about this excerpt.
 - Mix types: concepts, code reading/writing, practical use cases.
 - Each question answerable from the excerpt alone.
 - Number clearly: "Q1:", "Q2:", etc.
+- IMPORTANT: When a question refers to a specific function, class, or code example from the excerpt, ALWAYS include that exact code snippet in the question, formatted as a markdown code block (using triple backticks with "python"). Also mention the page number where the code appears (e.g., "from page 42").
 - Questions only, no answers.`;
 }
 
@@ -809,28 +820,64 @@ function parseQuestions(raw) { return raw.split(/\n?Q\d+:/i).map(s => s.trim()).
 
 function askNextQuestion() {
   if (state.currentQ >= state.questions.length) { endQuiz(); return; }
-  addMessage('question', state.questions[state.currentQ]);
+  exitClarifyMode();
+  addMessage('question', formatMarkdown(state.questions[state.currentQ]));
   $('answer-input').disabled = false; $('send-btn').disabled = false; $('answer-input').focus();
 }
 
 async function submitAnswer() {
-  const answer = $('answer-input').value.trim(); if (!answer) return;
+  const input = $('answer-input').value.trim(); if (!input) return;
   $('answer-input').value = ''; $('answer-input').style.height = 'auto';
   $('answer-input').disabled = true; $('send-btn').disabled = true;
-  addMessage('user', answer);
+
+  const ctx = state.mode === 'weak'
+    ? (state.weakTextCache[state.weakQueue[state.currentQ]?.chapterIdx] || '')
+    : state.chapterText;
+
+  if (state.clarifying) {
+    // Clarification mode: ask Gemini to clarify, not evaluate
+    addMessage('clarify-q', input);
+    const replyEl = addMessage('clarify', '⏳ Clarifying…');
+    try {
+      const reply = await callGemini([{ role:'user', parts:[{ text: buildClarificationPrompt(state.questions[state.currentQ], input, ctx) }] }]);
+      replyEl.innerHTML = formatMarkdown(reply);
+    } catch (err) {
+      replyEl.textContent = '⚠ Error: ' + err.message;
+    }
+    // Stay in clarification mode so user can ask again or switch to answering
+    $('answer-input').disabled = false; $('send-btn').disabled = false; $('answer-input').focus();
+    return;
+  }
+
+  // Normal answer mode
+  addMessage('user', input);
   const feedbackEl = addMessage('feedback', '⏳ Evaluating…');
   try {
-    const ctx = state.mode === 'weak'
-      ? (state.weakTextCache[state.weakQueue[state.currentQ]?.chapterIdx] || '')
-      : state.chapterText;
-    const feedback = await callGemini([{ role:'user', parts:[{ text: buildFeedbackPrompt(state.questions[state.currentQ], answer, ctx) }] }]);
+    const feedback = await callGemini([{ role:'user', parts:[{ text: buildFeedbackPrompt(state.questions[state.currentQ], input, ctx) }] }]);
     feedbackEl.innerHTML = formatMarkdown(feedback);
-    state.answers.push({ question: state.questions[state.currentQ], userAnswer: answer, feedback });
+    state.answers.push({ question: state.questions[state.currentQ], userAnswer: input, feedback });
+    exitClarifyMode();
     showAssessRow(state.currentQ, feedback);
   } catch (err) {
     feedbackEl.textContent = '⚠ Error: ' + err.message;
     $('answer-input').disabled = false; $('send-btn').disabled = false;
   }
+}
+
+function buildClarificationPrompt(question, userQuestion, context) {
+  return `You are a pedagogical assistant and Python expert, specialized in the book being studied.
+
+Chapter excerpt (with page numbers):
+--- START ---
+${context.slice(0, 15000)}
+--- END ---
+
+The student is about to answer this quiz question:
+"${question}"
+
+Before answering, they want a clarification: "${userQuestion}"
+
+Provide a helpful clarification or explanation to assist them. Do NOT answer the quiz question for them — only clarify concepts, terms, or context they asked about. Use markdown for code blocks. Reply in English.`;
 }
 
 function buildFeedbackPrompt(question, answer, context) {
@@ -941,10 +988,29 @@ function saveApiKey(key) {
 $('save-key-btn').addEventListener('click', () => saveApiKey($('api-key-input').value));
 $('api-key-input').addEventListener('keydown', e => { if (e.key === 'Enter') saveApiKey($('api-key-input').value); });
 
+// ─── Clarification mode ────────────────────────────────────────────────────────
+function enterClarifyMode() {
+  state.clarifying = true;
+  $('clarify-banner').style.display = 'flex';
+  $('clarify-btn').textContent = '✏ Answer instead';
+  $('clarify-btn').classList.replace('btn-ghost', 'btn-warn');
+  $('answer-input').placeholder = 'Ask your question about this topic… (Enter to send)';
+  $('answer-input').focus();
+}
+function exitClarifyMode() {
+  state.clarifying = false;
+  $('clarify-banner').style.display = 'none';
+  $('clarify-btn').textContent = '🤔 Ask first';
+  $('clarify-btn').classList.replace('btn-warn', 'btn-ghost');
+  $('answer-input').placeholder = 'Type your answer… (Enter to send, Shift+Enter for newline)';
+}
+
 // ─── Input ────────────────────────────────────────────────────────────────────
 $('answer-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitAnswer(); } });
 $('answer-input').addEventListener('input', () => { $('answer-input').style.height = 'auto'; $('answer-input').style.height = Math.min($('answer-input').scrollHeight, 140) + 'px'; });
 $('send-btn').addEventListener('click', submitAnswer);
+$('clarify-btn').addEventListener('click', () => { if (state.clarifying) exitClarifyMode(); else enterClarifyMode(); });
+$('clarify-cancel-btn').addEventListener('click', exitClarifyMode);
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
 $('back-btn').addEventListener('click', showChapterSelect);
