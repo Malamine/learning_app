@@ -1,8 +1,9 @@
-const CACHE_NAME = 'book-quiz-v4';
+const CACHE_NAME = 'book-quiz-v5';
 
 const STATIC_ASSETS = [
   './',
   './index.html',
+  './builtin-books.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',

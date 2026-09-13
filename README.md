@@ -9,11 +9,14 @@ Built originally for **Fluent Python** by Luciano Ramalho, but works with any te
 ## ✨ Features
 
 - **Drop your book PDF** → chapters are detected automatically from the table of contents
+- **Built-in reference guides** — four ready-made thematic books, no upload needed, works offline:
+  - *Python Best Practices* (PEP 8, PEP 20, PEP 257)
+  - *Testing with Pytest & Mock* (fixtures, parametrize, marks, `unittest.mock`/`patch`)
+  - *Concurrency: Threading & Multiprocessing* (`threading`, `multiprocessing`, `concurrent.futures`)
+  - *Decorators & Python Syntax* (PEP 318, `functools.wraps`/`lru_cache`/`singledispatch`)
 - **Random quiz by default** — a chapter is picked for you on every launch
-- **AI-generated questions** — Gemini reads the chapter and creates varied questions (concepts, code, practical use)
-- **Detailed feedback** — your answer is evaluated with corrections and code examples
-- **Self-assessment** — mark each answer as ✓ Got it or ✗ Need to review
-- **Weak spots tracker** — missed questions are saved and can be re-quizzed in a focused session
+- **AI-generated multiple-choice questions** — Gemini reads the chapter/topic and creates 4-option MCQs (concepts, code, practical use) with instant right/wrong feedback and an explanation
+- **Weak spots tracker with spaced repetition** — missed questions are saved and rescheduled with a Leitner system (1/2/4/9/18-day intervals); a question "graduates" out of the list once you've answered it right on schedule several times in a row
 - **Multiple books** — switch between books from the header dropdown
 - **Progress tracking** — scores per chapter saved across sessions
 - **Installable PWA** — works as a native app on Android and iOS
@@ -52,17 +55,15 @@ The free tier allows **1,500 requests/day** — more than enough for daily study
 
 ### During a quiz
 
-- Type your answer in the text box and press **Enter** (or **Shift+Enter** for a new line)
-- Gemini evaluates your answer and gives detailed feedback
-- After each feedback, rate yourself:
-  - **✓ Got it** — moves to the next question
-  - **✗ Need to review** — saves the question to your weak spots list for later
+- Pick one of the 4 answer options — it's graded instantly with an explanation
+- Wrong answers are automatically saved to your weak spots list
+- Tap **🤔 Ask first** if you want a clarifying hint before committing to an answer
 
 ### Managing books
 
 Click the **book name in the header** to:
 - Switch between books instantly
-- Add a new book (drop another PDF)
+- Add a new book (drop another PDF, or add a built-in reference guide)
 - Remove a book
 
 ### Settings ⚙
@@ -127,7 +128,7 @@ python -m http.server 8000
 
 ```bash
 git init
-git add index.html manifest.json sw.js icon-192.png icon-512.png README.md
+git add index.html builtin-books.js manifest.json sw.js icon-192.png icon-512.png README.md
 git commit -m "Initial release"
 git remote add origin https://github.com/YOUR_USERNAME/book-quiz.git
 git branch -M main

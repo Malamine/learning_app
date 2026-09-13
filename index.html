@@ -11,6 +11,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="builtin-books.js"></script>
   <style>
     :root {
       --bg: #0d0d1a; --surface: #1a1a2e; --surface2: #16213e; --border: #2d2d4e;
@@ -152,9 +153,23 @@
     .msg code { font-family: var(--font-mono); background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.85em; }
     .msg pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; overflow-x: auto; margin: 0.5rem 0; font-family: var(--font-mono); font-size: 0.82em; }
     .msg pre code { background: none; padding: 0; }
-    .assess-row { align-self: flex-start; display: flex; gap: 0.5rem; padding: 0.4rem 0.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 0.78rem; }
-    .assess-row span { color: var(--text-dim); display: flex; align-items: center; padding: 0 0.25rem; }
-    .assess-btn { padding: 0.3rem 0.75rem; font-size: 0.78rem; font-weight: 600; border-radius: 5px; }
+    /* MCQ options */
+    .options-wrap { align-self: stretch; display: flex; flex-direction: column; gap: 0.5rem; max-width: 85%; }
+    .opt-btn {
+      display: flex; align-items: flex-start; gap: 0.6rem; text-align: left; padding: 0.65rem 0.85rem;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+      font-size: 0.86rem; line-height: 1.5; font-family: var(--font-ui);
+    }
+    .opt-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-dim); }
+    .opt-btn:disabled { cursor: default; }
+    .opt-letter { flex-shrink: 0; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: var(--code-bg); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700; color: var(--text-dim); }
+    .opt-text { flex: 1; }
+    .opt-btn.correct { background: rgba(76,175,130,0.18); border-color: var(--success); }
+    .opt-btn.correct .opt-letter { background: var(--success); color: #fff; border-color: var(--success); }
+    .opt-btn.incorrect { background: rgba(224,85,85,0.18); border-color: var(--danger); }
+    .opt-btn.incorrect .opt-letter { background: var(--danger); color: #fff; border-color: var(--danger); }
+    .opt-btn.dim { opacity: 0.55; }
+    .explain-box { align-self: flex-start; }
     .input-area { display: flex; gap: 0.5rem; padding: 0.75rem 1rem; background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; }
     textarea { flex: 1; background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--font-ui); font-size: 0.88rem; padding: 0.6rem 0.8rem; resize: none; outline: none; min-height: 44px; max-height: 140px; line-height: 1.4; transition: border 0.15s; }
     textarea:focus { border-color: var(--accent); }
@@ -192,6 +207,18 @@
     .book-item-meta { font-size: 0.7rem; color: var(--text-dim); margin-top: 0.1rem; }
     .book-item-del { background: transparent; color: var(--text-dim); padding: 0.25rem 0.4rem; font-size: 0.8rem; border-radius: 4px; flex-shrink: 0; }
     .book-item-del:hover { color: var(--danger); background: rgba(224,85,85,0.1); }
+
+    /* Built-in guides */
+    .builtin-divider { display: flex; align-items: center; gap: 0.75rem; width: 100%; max-width: 480px; color: var(--text-dim); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
+    .builtin-divider::before, .builtin-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    .builtin-list { display: flex; flex-direction: column; gap: 0.6rem; width: 100%; max-width: 480px; }
+    .builtin-card { display: flex; align-items: center; gap: 0.75rem; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 0.85rem 1rem; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+    .builtin-card:hover { border-color: var(--accent); background: var(--surface2); }
+    .builtin-card .bc-icon { font-size: 1.4rem; }
+    .builtin-card .bc-info { flex: 1; min-width: 0; }
+    .builtin-card .bc-name { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+    .builtin-card .bc-meta { font-size: 0.72rem; color: var(--text-dim); margin-top: 0.15rem; }
+    .builtin-card .bc-added { font-size: 0.7rem; color: var(--success); font-weight: 700; flex-shrink: 0; }
 
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -248,6 +275,8 @@
         <p class="dz-hint">Chapters are detected automatically</p>
         <p class="dz-hint" style="margin-top:0.5rem;color:var(--text-dim);">Drag &amp; drop or click to browse</p>
       </div>
+      <div class="builtin-divider">or add a reference guide</div>
+      <div class="builtin-list" id="builtin-list"></div>
     </div>
 
     <!-- Chapter select -->
@@ -288,8 +317,8 @@
       </div>
       <div class="input-area">
         <button class="btn btn-ghost" id="clarify-btn" title="Ask for precision before answering" style="font-size:0.82rem;white-space:nowrap;flex-shrink:0;">🤔 Ask first</button>
-        <textarea id="answer-input" placeholder="Type your answer… (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
-        <button class="btn btn-primary" id="send-btn">Send</button>
+        <textarea id="answer-input" placeholder="Ask a clarifying question before choosing…" rows="1" disabled></textarea>
+        <button class="btn btn-primary" id="send-btn" disabled>Send</button>
       </div>
     </div>
 
@@ -410,7 +439,7 @@ function genId()          { return Date.now().toString(36) + Math.random().toStr
 const state = {
   apiKey: '', model: 'gemini-2.5-flash', numQuestions: 4, deferInstall: null,
   // Active book (derived from localStorage)
-  bookId: '', bookName: '', bookPdf: null, chapters: [],
+  bookId: '', bookName: '', bookType: 'pdf', bookPdf: null, chapters: [],
   // Session
   mode: 'normal', activeChapterIdx: -1, clarifying: false,
   questions: [], currentQ: 0, answers: [],
@@ -426,6 +455,7 @@ async function init() {
   state.model        = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
   state.numQuestions = parseInt(localStorage.getItem('num_questions') || '4');
   if (state.apiKey) $('api-card').style.display = 'none';
+  renderBuiltinList();
 
   const book = getActiveBook() || getBooks()[0] || null;
   if (book) {
@@ -444,6 +474,17 @@ async function loadBook(id, thenLaunch = true) {
   state.bookId   = book.id;
   state.bookName = book.name;
   state.chapters = book.chapters;
+  state.bookType = book.sourceType || 'pdf';
+  state.builtinId = book.builtinId || '';
+
+  if (state.bookType === 'builtin') {
+    state.bookPdf = null;
+    updateBookSwitcher();
+    renderSidebar();
+    updateWeakBadges();
+    if (thenLaunch) launchRandom();
+    return;
+  }
 
   showScreen('loading'); setLoading('Restoring book…', 10, '');
   try {
@@ -463,6 +504,40 @@ async function loadBook(id, thenLaunch = true) {
     if (remaining.length) await loadBook(remaining[0].id);
     else showScreen('book-setup');
   }
+}
+
+// ─── Built-in reference guides ─────────────────────────────────────────────────
+function renderBuiltinList() {
+  const el = $('builtin-list');
+  if (!el) return;
+  const owned = new Set(getBooks().filter(b => b.sourceType === 'builtin').map(b => b.builtinId));
+  el.innerHTML = (window.BUILTIN_BOOKS || []).map(b => {
+    const added = owned.has(b.id);
+    return `<div class="builtin-card" data-builtin="${b.id}">
+      <div class="bc-icon">📖</div>
+      <div class="bc-info">
+        <div class="bc-name">${escHtml(b.name)}</div>
+        <div class="bc-meta">${b.chapters.length} topics · bundled, works offline</div>
+      </div>
+      ${added ? '<div class="bc-added">✓ Added</div>' : ''}
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.builtin-card').forEach(card => card.addEventListener('click', () => addBuiltinBook(card.dataset.builtin)));
+}
+
+async function addBuiltinBook(builtinId) {
+  if (!state.apiKey) { alert('Please save your Gemini API key first.'); $('api-key-input').focus(); return; }
+  const src = (window.BUILTIN_BOOKS || []).find(b => b.id === builtinId);
+  if (!src) return;
+  const books = getBooks();
+  let book = books.find(b => b.sourceType === 'builtin' && b.builtinId === builtinId);
+  if (!book) {
+    book = { id: genId(), name: src.name, sourceType: 'builtin', builtinId: src.id,
+      chapters: src.chapters.map(c => ({ title: c.title })), addedAt: Date.now() };
+    books.push(book);
+    saveBooks(books);
+  }
+  await loadBook(book.id);
 }
 
 // ─── Book switcher ────────────────────────────────────────────────────────────
@@ -520,9 +595,9 @@ function renderBookList() {
         const remaining = getBooks();
         if (remaining.length) await loadBook(remaining[0].id);
         else {
-          state.bookId = ''; state.bookName = ''; state.bookPdf = null; state.chapters = [];
+          state.bookId = ''; state.bookName = ''; state.bookType = 'pdf'; state.builtinId = ''; state.bookPdf = null; state.chapters = [];
           $('book-switcher').style.display = 'none';
-          renderSidebar(); showScreen('book-setup');
+          renderSidebar(); renderBuiltinList(); showScreen('book-setup');
         }
       }
     });
@@ -532,6 +607,7 @@ function renderBookList() {
 $('add-book-btn').addEventListener('click', () => {
   $('book-picker-modal').classList.remove('open');
   $('dz-label').innerHTML = '<strong>Drop a new book PDF here</strong>';
+  renderBuiltinList();
   showScreen('book-setup');
 });
 $('book-picker-close-btn').addEventListener('click', () => $('book-picker-modal').classList.remove('open'));
@@ -581,12 +657,12 @@ async function processBookFile(file) {
     if (!chapters.length) throw new Error('Could not detect any chapters. Is this the correct PDF?');
     setLoading(`Saving… (${chapters.length} chapters found)`, 80);
     const id = genId();
-    const book = { id, name: bookName, chapters, addedAt: Date.now() };
+    const book = { id, name: bookName, sourceType: 'pdf', chapters, addedAt: Date.now() };
     const books = getBooks();
     books.push(book);
     saveBooks(books);
     await dbSet(`book_pdf_${id}`, buffer);
-    state.bookId = id; state.bookName = bookName; state.bookPdf = pdf; state.chapters = chapters;
+    state.bookId = id; state.bookName = bookName; state.bookType = 'pdf'; state.bookPdf = pdf; state.chapters = chapters;
     setActiveBookId(id);
     setLoading('Done!', 100);
     updateBookSwitcher(); renderSidebar(); updateWeakBadges();
@@ -662,20 +738,45 @@ async function chaptersFromTextScan(pdf) {
   return chapters;
 }
 
-// ─── Weak spots ───────────────────────────────────────────────────────────────
+// ─── Weak spots (spaced repetition, Leitner system) ────────────────────────────
+// Box 0 → due again in 1 day if correct, box 1 → 2 days, ... box 4 → 18 days.
+// Answering correctly at the last box "graduates" the spot out of the list entirely.
+const LEITNER_INTERVALS_DAYS = [1, 2, 4, 9, 18];
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 function getWeakSpots(bookId) {
   try { return JSON.parse(localStorage.getItem('weak_spots') || '[]').filter(s => !bookId || s.bookId === bookId); } catch { return []; }
 }
 function getAllWeakSpots() { try { return JSON.parse(localStorage.getItem('weak_spots') || '[]'); } catch { return []; } }
-function saveWeakSpot(question, chapterIdx, chapterName, feedback) {
+
+// q: the full MCQ object { question, options, correct, explanation }
+function saveWeakSpot(q, chapterIdx, chapterName) {
   const all = getAllWeakSpots();
-  if (all.some(s => s.question === question && s.chapterIdx === chapterIdx && s.bookId === state.bookId)) return;
-  all.push({ id: Date.now(), question, chapterIdx, chapterName, bookId: state.bookId, feedback, addedAt: Date.now(), attempts: 0 });
+  const existing = all.find(s => s.question === q.question && s.chapterIdx === chapterIdx && s.bookId === state.bookId);
+  if (existing) {
+    // Missed again: reset to box 0 so it resurfaces soon, keep the latest options/explanation.
+    Object.assign(existing, { options: q.options, correct: q.correct, explanation: q.explanation, box: 0, nextReviewAt: Date.now(), attempts: (existing.attempts || 0) + 1 });
+  } else {
+    all.push({ id: Date.now(), question: q.question, options: q.options, correct: q.correct, explanation: q.explanation,
+      chapterIdx, chapterName, bookId: state.bookId, addedAt: Date.now(), attempts: 0, box: 0, nextReviewAt: Date.now() });
+  }
   localStorage.setItem('weak_spots', JSON.stringify(all));
   updateWeakBadges();
 }
-function removeWeakSpot(question, chapterIdx) {
-  localStorage.setItem('weak_spots', JSON.stringify(getAllWeakSpots().filter(s => !(s.question === question && s.chapterIdx === chapterIdx && s.bookId === state.bookId))));
+// Called when a weak spot is answered correctly during a review session.
+// Advances its Leitner box and pushes its next-due date further out; graduates (removes) it after the last box.
+function advanceWeakSpot(question, chapterIdx) {
+  const all = getAllWeakSpots();
+  const spot = all.find(s => s.question === question && s.chapterIdx === chapterIdx && s.bookId === state.bookId);
+  if (!spot) return;
+  const nextBox = (spot.box || 0) + 1;
+  if (nextBox >= LEITNER_INTERVALS_DAYS.length) {
+    localStorage.setItem('weak_spots', JSON.stringify(all.filter(s => s !== spot)));
+  } else {
+    spot.box = nextBox;
+    spot.nextReviewAt = Date.now() + LEITNER_INTERVALS_DAYS[nextBox] * DAY_MS;
+    localStorage.setItem('weak_spots', JSON.stringify(all));
+  }
   updateWeakBadges();
 }
 function updateWeakBadges() {
@@ -699,8 +800,9 @@ function renderSidebar() {
   el.innerHTML = state.chapters.map((ch, i) => {
     const score = getBestScore(i);
     const badge = score !== null ? `<span class="ch-score ${scoreClass(score)}">${score}%</span>` : '';
+    const meta = ch.startPage ? `pp. ${ch.startPage}–${ch.endPage}` : 'Reference topic';
     return `<div class="ch-item${state.activeChapterIdx === i ? ' active' : ''}" data-idx="${i}">
-      <div class="ch-item-info"><div class="ch-title">${escHtml(ch.title)}</div><div class="ch-meta">pp. ${ch.startPage}–${ch.endPage}</div></div>${badge}
+      <div class="ch-item-info"><div class="ch-title">${escHtml(ch.title)}</div><div class="ch-meta">${meta}</div></div>${badge}
     </div>`;
   }).join('');
   el.querySelectorAll('.ch-item').forEach(el =>
@@ -713,14 +815,14 @@ function renderChapterGrid() {
   $('cs-title').textContent = state.bookName || 'Select a chapter';
   $('chapter-grid').innerHTML = state.chapters.map((ch, i) => {
     const score = getBestScore(i);
-    const pages = ch.endPage - ch.startPage + 1;
     const wk = weak.filter(w => w.chapterIdx === i).length;
     const badges = [];
     if (score !== null) badges.push(`<span class="card-score ${scoreClass(score)}">${score}%</span>`);
     if (wk) badges.push(`<span class="card-weak-dot">⚠ ${wk} weak</span>`);
+    const meta = ch.startPage ? `pp. ${ch.startPage}–${ch.endPage} · ${ch.endPage - ch.startPage + 1}p` : 'Reference topic';
     return `<div class="chapter-card${wk ? ' has-weak' : ''}" data-idx="${i}">
       <div class="card-title">${escHtml(ch.title)}</div>
-      <div class="card-meta">pp. ${ch.startPage}–${ch.endPage} · ${pages}p</div>
+      <div class="card-meta">${meta}</div>
       ${badges.length ? `<div class="card-badges">${badges.join('')}</div>` : ''}
     </div>`;
   }).join('');
@@ -736,24 +838,37 @@ function launchRandom() {
 }
 
 // ─── Launch quiz ──────────────────────────────────────────────────────────────
+function getBuiltinChapterText(idx) {
+  const src = (window.BUILTIN_BOOKS || []).find(b => b.id === state.builtinId);
+  return src?.chapters[idx]?.text || '';
+}
+
+async function getChapterText(idx) {
+  const ch = state.chapters[idx];
+  if (state.bookType === 'builtin') return getBuiltinChapterText(idx);
+  return extractChapterText(state.bookPdf, ch.startPage, ch.endPage);
+}
+
 async function launchQuiz(idx) {
   state.mode = 'normal'; state.activeChapterIdx = idx;
   const ch = state.chapters[idx];
   showScreen('loading'); setLoading('Extracting chapter text…', 20, ch.title);
   try {
-    state.chapterText = (await extractChapterText(state.bookPdf, ch.startPage, ch.endPage)).slice(0, 32000);
+    state.chapterText = (await getChapterText(idx)).slice(0, 32000);
     setLoading('Generating questions with Gemini…', 65, ch.title);
     await startQuiz(ch.title);
   } catch (err) { alert('Error: ' + err.message); showChapterSelect(); }
 }
 
 async function launchWeakSession() {
-  const spots = getWeakSpots(state.bookId);
+  // Only spots saved since the MCQ rewrite carry full options; older entries can't be replayed.
+  const spots = getWeakSpots(state.bookId).filter(s => Array.isArray(s.options) && s.options.length === 4);
   if (!spots.length) { alert('No weak spots saved for this book!'); return; }
   state.mode = 'weak'; state.activeChapterIdx = -1;
-  spots.sort((a, b) => b.attempts - a.attempts || a.addedAt - b.addedAt);
+  // Spaced repetition: surface whatever is due (or soonest due) first, so mastered spots naturally recede.
+  spots.sort((a, b) => (a.nextReviewAt ?? 0) - (b.nextReviewAt ?? 0));
   state.weakQueue = spots.slice(0, state.numQuestions);
-  state.questions = state.weakQueue.map(s => s.question);
+  state.questions = state.weakQueue.map(s => ({ question: s.question, options: s.options, correct: s.correct, explanation: s.explanation }));
   state.currentQ = 0; state.answers = [];
 
   showScreen('loading'); setLoading('Loading weak spots…', 20);
@@ -763,7 +878,7 @@ async function launchWeakSession() {
       const ch = state.chapters[spot.chapterIdx];
       if (ch) {
         setLoading(`Loading "${ch.title}"…`, 30);
-        state.weakTextCache[spot.chapterIdx] = (await extractChapterText(state.bookPdf, ch.startPage, ch.endPage)).slice(0, 32000);
+        state.weakTextCache[spot.chapterIdx] = (await getChapterText(spot.chapterIdx)).slice(0, 32000);
       }
     }
   }
@@ -787,7 +902,7 @@ async function extractChapterText(pdf, startPage, endPage) {
 // ─── Quiz ─────────────────────────────────────────────────────────────────────
 async function startQuiz(chapterTitle) {
   state.questions = []; state.currentQ = 0; state.answers = [];
-  const raw = await callGemini([{ role:'user', parts:[{ text: buildGenerationPrompt(state.chapterText, state.numQuestions) }] }]);
+  const raw = await callGemini([{ role:'user', parts:[{ text: buildGenerationPrompt(state.chapterText, state.numQuestions) }] }], true);
   const questions = parseQuestions(raw);
   if (!questions.length) throw new Error('Could not parse questions from Gemini. Try again.');
   state.questions = questions;
@@ -799,69 +914,106 @@ async function startQuiz(chapterTitle) {
 }
 
 function buildGenerationPrompt(text, n) {
-  return `You are a pedagogical assistant and Python expert, specialized in the book being studied.
+  return `You are a pedagogical assistant and Python expert, specialized in the material being studied.
 
-The chapter text below includes page markers like [Page 42] so you know where each section comes from.
+The excerpt below includes page markers like [Page 42] where applicable.
 
-Chapter excerpt:
+Excerpt:
 --- START ---
 ${text}
 --- END ---
 
-Generate exactly ${n} varied, relevant quiz questions about this excerpt.
-- Mix types: concepts, code reading/writing, practical use cases.
+Generate exactly ${n} varied, relevant multiple-choice quiz questions about this excerpt.
+- Mix types: concepts, code reading, practical use cases.
 - Each question answerable from the excerpt alone.
-- Number clearly: "Q1:", "Q2:", etc.
-- IMPORTANT: When a question refers to a specific function, class, or code example from the excerpt, ALWAYS include that exact code snippet in the question, formatted as a markdown code block (using triple backticks with "python"). Also mention the page number where the code appears (e.g., "from page 42").
-- Questions only, no answers.`;
+- Exactly 4 answer options per question, only ONE correct.
+- Distractors must be plausible, not obviously wrong.
+- When a question refers to a specific function, class, or code example from the excerpt, include the exact code snippet in the "question" field as a markdown code block (triple backticks with "python").
+- Provide a short "explanation" for why the correct option is right and, briefly, why the others are wrong.
+- Respond ONLY with a JSON array (no markdown fences, no prose) matching this shape:
+[{"question": "...", "options": ["...", "...", "...", "..."], "correct": 0, "explanation": "..."}]
+- "correct" is the zero-based index into "options" of the right answer.`;
 }
 
-function parseQuestions(raw) { return raw.split(/\n?Q\d+:/i).map(s => s.trim()).filter(Boolean); }
+function parseQuestions(raw) {
+  try {
+    let clean = raw.trim().replace(/^```(json)?/i, '').replace(/```$/, '').trim();
+    const arr = JSON.parse(clean);
+    return arr.filter(q => q && q.question && Array.isArray(q.options) && q.options.length === 4 && Number.isInteger(q.correct));
+  } catch { return []; }
+}
 
 function askNextQuestion() {
   if (state.currentQ >= state.questions.length) { endQuiz(); return; }
   exitClarifyMode();
-  addMessage('question', formatMarkdown(state.questions[state.currentQ]));
-  $('answer-input').disabled = false; $('send-btn').disabled = false; $('answer-input').focus();
+  const q = state.questions[state.currentQ];
+  addMessage('question', formatMarkdown(q.question));
+  renderOptions(q);
+  $('answer-input').disabled = true; $('send-btn').disabled = true;
+}
+
+function renderOptions(q) {
+  const wrap = document.createElement('div');
+  wrap.className = 'options-wrap';
+  const letters = ['A', 'B', 'C', 'D'];
+  wrap.innerHTML = q.options.map((opt, i) => `
+    <button class="opt-btn" data-i="${i}">
+      <span class="opt-letter">${letters[i]}</span>
+      <span class="opt-text">${formatMarkdown(opt)}</span>
+    </button>`).join('');
+  $('messages').appendChild(wrap);
+  $('messages').scrollTop = $('messages').scrollHeight;
+  wrap.querySelectorAll('.opt-btn').forEach(btn => btn.addEventListener('click', () => selectOption(wrap, q, +btn.dataset.i)));
+}
+
+function selectOption(wrap, q, chosenIdx) {
+  if (state.clarifying) return; // ignore option clicks while clarifying
+  const isCorrect = chosenIdx === q.correct;
+  wrap.querySelectorAll('.opt-btn').forEach((btn, i) => {
+    btn.disabled = true;
+    if (i === q.correct) btn.classList.add('correct');
+    else if (i === chosenIdx) btn.classList.add('incorrect');
+    else btn.classList.add('dim');
+  });
+
+  const explainEl = document.createElement('div');
+  explainEl.className = 'msg msg-feedback explain-box';
+  explainEl.innerHTML = `<strong>${isCorrect ? '✅ Correct!' : '❌ Not quite.'}</strong><br/>${formatMarkdown(q.explanation || '')}`;
+  $('messages').appendChild(explainEl);
+  $('messages').scrollTop = $('messages').scrollHeight;
+
+  const chIdx = state.mode === 'weak' ? (state.weakQueue[state.currentQ]?.chapterIdx ?? -1) : state.activeChapterIdx;
+  const chName = state.mode === 'weak' ? (state.weakQueue[state.currentQ]?.chapterName ?? '') : (state.chapters[state.activeChapterIdx]?.title ?? '');
+  if (isCorrect) {
+    if (state.mode === 'weak') advanceWeakSpot(q.question, chIdx);
+  } else {
+    saveWeakSpot(q, chIdx, chName);
+  }
+  state.answers.push({ question: q.question, options: q.options, correct: q.correct, chosen: chosenIdx, isCorrect, explanation: q.explanation });
+  state.currentQ++; updateProgress();
+  setTimeout(askNextQuestion, 900);
 }
 
 async function submitAnswer() {
   const input = $('answer-input').value.trim(); if (!input) return;
   $('answer-input').value = ''; $('answer-input').style.height = 'auto';
-  $('answer-input').disabled = true; $('send-btn').disabled = true;
+
+  if (!state.clarifying) return; // free-text input is only used for the "ask first" clarification flow
 
   const ctx = state.mode === 'weak'
     ? (state.weakTextCache[state.weakQueue[state.currentQ]?.chapterIdx] || '')
     : state.chapterText;
 
-  if (state.clarifying) {
-    // Clarification mode: ask Gemini to clarify, not evaluate
-    addMessage('clarify-q', input);
-    const replyEl = addMessage('clarify', '⏳ Clarifying…');
-    try {
-      const reply = await callGemini([{ role:'user', parts:[{ text: buildClarificationPrompt(state.questions[state.currentQ], input, ctx) }] }]);
-      replyEl.innerHTML = formatMarkdown(reply);
-    } catch (err) {
-      replyEl.textContent = '⚠ Error: ' + err.message;
-    }
-    // Stay in clarification mode so user can ask again or switch to answering
-    $('answer-input').disabled = false; $('send-btn').disabled = false; $('answer-input').focus();
-    return;
-  }
-
-  // Normal answer mode
-  addMessage('user', input);
-  const feedbackEl = addMessage('feedback', '⏳ Evaluating…');
+  $('answer-input').disabled = true; $('send-btn').disabled = true;
+  addMessage('clarify-q', input);
+  const replyEl = addMessage('clarify', '⏳ Clarifying…');
   try {
-    const feedback = await callGemini([{ role:'user', parts:[{ text: buildFeedbackPrompt(state.questions[state.currentQ], input, ctx) }] }]);
-    feedbackEl.innerHTML = formatMarkdown(feedback);
-    state.answers.push({ question: state.questions[state.currentQ], userAnswer: input, feedback });
-    exitClarifyMode();
-    showAssessRow(state.currentQ, feedback);
+    const reply = await callGemini([{ role:'user', parts:[{ text: buildClarificationPrompt(state.questions[state.currentQ].question, input, ctx) }] }]);
+    replyEl.innerHTML = formatMarkdown(reply);
   } catch (err) {
-    feedbackEl.textContent = '⚠ Error: ' + err.message;
-    $('answer-input').disabled = false; $('send-btn').disabled = false;
+    replyEl.textContent = '⚠ Error: ' + err.message;
   }
+  $('answer-input').disabled = false; $('send-btn').disabled = false; $('answer-input').focus();
 }
 
 function buildClarificationPrompt(question, userQuestion, context) {
@@ -880,60 +1032,8 @@ Before answering, they want a clarification: "${userQuestion}"
 Provide a helpful clarification or explanation to assist them. Do NOT answer the quiz question for them — only clarify concepts, terms, or context they asked about. Use markdown for code blocks. Reply in English.`;
 }
 
-function buildFeedbackPrompt(question, answer, context) {
-  return `You are a pedagogical assistant and expert in the book being studied.
-
-Chapter excerpt:
---- START ---
-${context.slice(0, 15000)}
---- END ---
-
-Question: ${question}
-Student's answer: ${answer}
-
-Evaluate:
-1. What is correct (specific).
-2. Mistakes or gaps.
-3. Complete accurate answer with code examples if relevant.
-4. Be kind, encouraging, precise.
-5. If fully correct, congratulate briefly.
-
-Reply in English. Use markdown for code blocks.`;
-}
-
-// ─── Self-assessment ──────────────────────────────────────────────────────────
-function showAssessRow(qIdx, feedback) {
-  const row = document.createElement('div');
-  row.className = 'assess-row';
-  row.innerHTML = `<span>Did you get it?</span>
-    <button class="assess-btn btn-success" data-r="got">✓ Got it</button>
-    <button class="assess-btn btn-warn" data-r="missed">✗ Need to review</button>`;
-  $('messages').appendChild(row);
-  $('messages').scrollTop = $('messages').scrollHeight;
-  row.querySelectorAll('.assess-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const got = btn.dataset.r === 'got';
-      const q = state.questions[qIdx];
-      const chIdx = state.mode === 'weak' ? (state.weakQueue[qIdx]?.chapterIdx ?? -1) : state.activeChapterIdx;
-      const chName = state.mode === 'weak' ? (state.weakQueue[qIdx]?.chapterName ?? '') : (state.chapters[state.activeChapterIdx]?.title ?? '');
-      if (got) {
-        if (state.mode === 'weak') removeWeakSpot(q, chIdx);
-        row.innerHTML = `<span style="color:var(--success);">✓ Marked as understood</span>`;
-      } else {
-        saveWeakSpot(q, chIdx, chName, feedback);
-        if (state.mode === 'weak') {
-          const all = getAllWeakSpots(), spot = all.find(s => s.question === q && s.chapterIdx === chIdx && s.bookId === state.bookId);
-          if (spot) { spot.attempts++; localStorage.setItem('weak_spots', JSON.stringify(all)); }
-        }
-        row.innerHTML = `<span style="color:var(--warning);">⚠ Saved for review</span>`;
-      }
-      state.currentQ++; updateProgress(); setTimeout(askNextQuestion, 500);
-    });
-  });
-}
-
 function endQuiz() {
-  const correct = state.answers.filter(a => /correct|great|excellent|perfect|well done|congratulations/i.test(a.feedback)).length;
+  const correct = state.answers.filter(a => a.isCorrect).length;
   const ch = state.mode === 'weak' ? null : state.chapters[state.activeChapterIdx];
   const session = { bookId: state.bookId, chapterIdx: state.activeChapterIdx, chapterName: ch?.title ?? 'Weak Spots Review', mode: state.mode, date: Date.now(), correct, total: state.questions.length, answers: state.answers };
   saveSession(session); state.lastSession = session;
@@ -952,11 +1052,13 @@ function getHistory() { try { return JSON.parse(localStorage.getItem('quiz_histo
 function saveSession(s) { const h = getHistory(); h.unshift(s); localStorage.setItem('quiz_history', JSON.stringify(h.slice(0, 100))); }
 
 // ─── Gemini API ───────────────────────────────────────────────────────────────
-async function callGemini(contents) {
+async function callGemini(contents, jsonMode = false) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.model}:generateContent?key=${encodeURIComponent(state.apiKey)}`;
+  const generationConfig = { temperature:0.7, maxOutputTokens:2048 };
+  if (jsonMode) generationConfig.responseMimeType = 'application/json';
   const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ contents, generationConfig:{ temperature:0.7, maxOutputTokens:2048 },
-      systemInstruction:{ parts:[{ text:'You are a pedagogical assistant and expert in the book being studied. Always reply in English.' }] } })
+    body: JSON.stringify({ contents, generationConfig,
+      systemInstruction:{ parts:[{ text:'You are a pedagogical assistant and expert in the material being studied. Always reply in English.' }] } })
   });
   if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error('Gemini API error: ' + (e?.error?.message || res.statusText)); }
   return (await res.json()).candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -992,9 +1094,10 @@ $('api-key-input').addEventListener('keydown', e => { if (e.key === 'Enter') sav
 function enterClarifyMode() {
   state.clarifying = true;
   $('clarify-banner').style.display = 'flex';
-  $('clarify-btn').textContent = '✏ Answer instead';
+  $('clarify-btn').textContent = '✕ Cancel';
   $('clarify-btn').classList.replace('btn-ghost', 'btn-warn');
   $('answer-input').placeholder = 'Ask your question about this topic… (Enter to send)';
+  $('answer-input').disabled = false; $('send-btn').disabled = false;
   $('answer-input').focus();
 }
 function exitClarifyMode() {
@@ -1002,7 +1105,8 @@ function exitClarifyMode() {
   $('clarify-banner').style.display = 'none';
   $('clarify-btn').textContent = '🤔 Ask first';
   $('clarify-btn').classList.replace('btn-warn', 'btn-ghost');
-  $('answer-input').placeholder = 'Type your answer… (Enter to send, Shift+Enter for newline)';
+  $('answer-input').placeholder = 'Ask a clarifying question before choosing…';
+  $('answer-input').disabled = true; $('send-btn').disabled = true;
 }
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -1029,7 +1133,20 @@ $('review-btn').addEventListener('click', () => {
   $('progress-fill').style.width = '100%'; $('progress-label').textContent = `${s.correct} / ${s.total}`;
   $('answer-input').disabled = true; $('send-btn').disabled = true;
   addMessage('system', `📖 Review — ${escHtml(s.chapterName)}`);
-  s.answers.forEach((a, i) => { addMessage('question', `Q${i+1}: ${escHtml(a.question)}`); addMessage('user', escHtml(a.userAnswer)); addMessage('feedback', formatMarkdown(a.feedback)); });
+  const letters = ['A', 'B', 'C', 'D'];
+  s.answers.forEach((a, i) => {
+    addMessage('question', `Q${i+1}: ${formatMarkdown(a.question)}`);
+    const wrap = document.createElement('div');
+    wrap.className = 'options-wrap';
+    wrap.innerHTML = (a.options || []).map((opt, oi) => {
+      let cls = 'dim';
+      if (oi === a.correct) cls = 'correct';
+      else if (oi === a.chosen) cls = 'incorrect';
+      return `<button class="opt-btn ${cls}" disabled><span class="opt-letter">${letters[oi]}</span><span class="opt-text">${formatMarkdown(opt)}</span></button>`;
+    }).join('');
+    $('messages').appendChild(wrap);
+    addMessage('feedback', `<strong>${a.isCorrect ? '✅ Correct!' : '❌ Not quite.'}</strong><br/>${formatMarkdown(a.explanation || '')}`);
+  });
   showScreen('chat');
 });
 
