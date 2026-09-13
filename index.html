@@ -153,6 +153,31 @@
     .msg code { font-family: var(--font-mono); background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.85em; }
     .msg pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; overflow-x: auto; margin: 0.5rem 0; font-family: var(--font-mono); font-size: 0.82em; }
     .msg pre code { background: none; padding: 0; }
+    .code-wrap { position: relative; }
+    .code-wrap pre { padding-top: 1.9rem; }
+    .code-expand-btn {
+      position: absolute; top: 0.85rem; right: 0.6rem; background: var(--surface2); color: var(--text-dim);
+      border: 1px solid var(--border); border-radius: 4px; font-size: 0.72rem; line-height: 1;
+      padding: 0.25rem 0.4rem; opacity: 0.85;
+    }
+    .code-expand-btn:hover { opacity: 1; color: var(--text); border-color: var(--accent); }
+
+    /* Full-screen code viewer */
+    .code-modal-backdrop { z-index: 300; padding: 0; }
+    .code-modal { background: var(--code-bg); width: 100%; height: 100%; display: flex; flex-direction: column; }
+    .code-modal-toolbar {
+      display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 1rem;
+      background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0;
+      font-size: 0.8rem; color: var(--text-dim); font-weight: 600;
+    }
+    .code-modal-pre {
+      flex: 1; margin: 0; padding: 1rem; overflow: auto; font-family: var(--font-mono);
+      font-size: 0.95rem; line-height: 1.6; color: var(--text);
+    }
+    @media (min-width: 700px) {
+      .code-modal-backdrop { padding: 3rem; }
+      .code-modal { border-radius: 12px; border: 1px solid var(--border); max-width: 900px; margin: 0 auto; max-height: 100%; }
+    }
     /* MCQ options */
     .options-wrap { align-self: stretch; display: flex; flex-direction: column; gap: 0.5rem; max-width: 85%; }
     .opt-btn {
@@ -398,6 +423,17 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" id="modal-close-btn">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- Full-screen code viewer -->
+<div class="modal-backdrop code-modal-backdrop" id="code-modal">
+  <div class="code-modal">
+    <div class="code-modal-toolbar">
+      <span>Code</span>
+      <button class="btn-icon" id="code-modal-close-btn" title="Close">✕</button>
+    </div>
+    <pre class="code-modal-pre"><code id="code-modal-code"></code></pre>
   </div>
 </div>
 
@@ -1142,7 +1178,8 @@ function updateProgress() {
 }
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function formatMarkdown(text) {
-  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, l, c) => `<pre><code>${escHtml(c.trim())}</code></pre>`);
+  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, l, c) =>
+    `<div class="code-wrap"><button class="code-expand-btn" title="Expand full screen">⤢ Expand</button><pre><code>${escHtml(c.trim())}</code></pre></div>`);
   text = text.replace(/`([^`]+)`/g, (_, c) => `<code>${escHtml(c)}</code>`);
   text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
@@ -1227,6 +1264,25 @@ $('settings-btn').addEventListener('click', () => {
 });
 $('modal-close-btn').addEventListener('click', () => $('settings-modal').classList.remove('open'));
 $('settings-modal').addEventListener('click', e => { if (e.target === $('settings-modal')) $('settings-modal').classList.remove('open'); });
+
+// ─── Full-screen code viewer ────────────────────────────────────────────────────
+function openCodeModal(code) {
+  $('code-modal-code').textContent = code;
+  $('code-modal').classList.add('open');
+}
+function closeCodeModal() { $('code-modal').classList.remove('open'); }
+// Delegated: code blocks are rendered dynamically into #messages.
+$('messages').addEventListener('click', e => {
+  const btn = e.target.closest('.code-expand-btn');
+  if (!btn) return;
+  const codeEl = btn.parentElement.querySelector('pre code');
+  // formatMarkdown() turns newlines into <br> tags, which textContent would silently drop —
+  // innerText respects rendered line breaks so multi-line code isn't squashed onto one line.
+  if (codeEl) openCodeModal(codeEl.innerText);
+});
+$('code-modal-close-btn').addEventListener('click', closeCodeModal);
+$('code-modal').addEventListener('click', e => { if (e.target === $('code-modal')) closeCodeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('code-modal').classList.contains('open')) closeCodeModal(); });
 $('settings-save-btn').addEventListener('click', () => {
   const key = $('settings-api-input').value.trim();
   if (key && !key.startsWith('••')) saveApiKey(key);
