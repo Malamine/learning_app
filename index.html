@@ -906,9 +906,23 @@ async function extractChapterText(pdf, startPage, endPage) {
 }
 
 // ─── Quiz ─────────────────────────────────────────────────────────────────────
+const QUESTIONS_SCHEMA = {
+  type: 'ARRAY',
+  items: {
+    type: 'OBJECT',
+    properties: {
+      question: { type: 'STRING' },
+      options: { type: 'ARRAY', items: { type: 'STRING' }, minItems: 4, maxItems: 4 },
+      correct: { type: 'INTEGER' },
+      explanation: { type: 'STRING' },
+    },
+    required: ['question', 'options', 'correct', 'explanation'],
+  },
+};
+
 async function startQuiz(chapterTitle) {
   state.questions = []; state.currentQ = 0; state.answers = [];
-  const raw = await callGemini([{ role:'user', parts:[{ text: buildGenerationPrompt(state.chapterText, state.numQuestions) }] }], true);
+  const raw = await callGemini([{ role:'user', parts:[{ text: buildGenerationPrompt(state.chapterText, state.numQuestions) }] }], true, QUESTIONS_SCHEMA);
   const questions = parseQuestions(raw);
   if (!questions.length) throw new Error('Could not parse questions from Gemini. Try again.');
   state.questions = questions;
@@ -944,8 +958,24 @@ Generate exactly ${n} varied, relevant multiple-choice quiz questions about this
 function parseQuestions(raw) {
   try {
     let clean = raw.trim().replace(/^```(json)?/i, '').replace(/```$/, '').trim();
-    const arr = JSON.parse(clean);
-    return arr.filter(q => q && q.question && Array.isArray(q.options) && q.options.length === 4 && Number.isInteger(q.correct));
+    let parsed = JSON.parse(clean);
+    // Some models wrap the array in an object (e.g. {"questions": [...]}) despite instructions.
+    if (!Array.isArray(parsed) && parsed && typeof parsed === 'object') {
+      const arrField = Object.values(parsed).find(v => Array.isArray(v));
+      parsed = arrField || [];
+    }
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(q => {
+      if (!q || typeof q.question !== 'string' || !Array.isArray(q.options) || q.options.length !== 4) return null;
+      // "correct" sometimes comes back as a numeric string or an option letter (A-D) instead of an index.
+      let correct = q.correct;
+      if (typeof correct === 'string') {
+        const letterIdx = 'ABCD'.indexOf(correct.trim().toUpperCase());
+        correct = letterIdx >= 0 ? letterIdx : parseInt(correct, 10);
+      }
+      if (!Number.isInteger(correct) || correct < 0 || correct > 3) return null;
+      return { question: q.question, options: q.options.map(String), correct, explanation: String(q.explanation || '') };
+    }).filter(Boolean);
   } catch { return []; }
 }
 
@@ -1058,10 +1088,13 @@ function getHistory() { try { return JSON.parse(localStorage.getItem('quiz_histo
 function saveSession(s) { const h = getHistory(); h.unshift(s); localStorage.setItem('quiz_history', JSON.stringify(h.slice(0, 100))); }
 
 // ─── Gemini API ───────────────────────────────────────────────────────────────
-async function callGeminiOnce(model, contents, jsonMode) {
+async function callGeminiOnce(model, contents, jsonMode, responseSchema) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(state.apiKey)}`;
-  const generationConfig = { temperature:0.7, maxOutputTokens:2048 };
+  // JSON responses (questions + explanations, possibly with code blocks) need more headroom
+  // than free-text replies, or generation gets cut off mid-JSON and fails to parse.
+  const generationConfig = { temperature:0.7, maxOutputTokens: jsonMode ? 4096 : 2048 };
   if (jsonMode) generationConfig.responseMimeType = 'application/json';
+  if (responseSchema) generationConfig.responseSchema = responseSchema;
   const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ contents, generationConfig,
       systemInstruction:{ parts:[{ text:'You are a pedagogical assistant and expert in the material being studied. Always reply in English.' }] } })
@@ -1072,19 +1105,24 @@ async function callGeminiOnce(model, contents, jsonMode) {
     err.status = res.status;
     throw err;
   }
-  return (await res.json()).candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const data = await res.json();
+  const candidate = data.candidates?.[0];
+  if (candidate?.finishReason === 'MAX_TOKENS') {
+    throw new Error('Gemini response was cut off (too many questions requested for one reply). Try lowering "Questions per session" in Settings.');
+  }
+  return candidate?.content?.parts?.[0]?.text || '';
 }
 
-async function callGemini(contents, jsonMode = false) {
+async function callGemini(contents, jsonMode = false, responseSchema = null) {
   try {
-    return await callGeminiOnce(state.model, contents, jsonMode);
+    return await callGeminiOnce(state.model, contents, jsonMode, responseSchema);
   } catch (err) {
     // Google regularly retires model versions. If the configured model is gone, self-heal by
     // switching to the always-current alias once, and remember it so this doesn't happen again.
     const modelGone = /is no longer available|not found|NOT_FOUND/i.test(err.message);
     if (modelGone && state.model !== FALLBACK_MODEL) {
       console.warn(`Model "${state.model}" is unavailable, retrying with "${FALLBACK_MODEL}"…`);
-      const reply = await callGeminiOnce(FALLBACK_MODEL, contents, jsonMode);
+      const reply = await callGeminiOnce(FALLBACK_MODEL, contents, jsonMode, responseSchema);
       state.model = FALLBACK_MODEL;
       localStorage.setItem('gemini_model', FALLBACK_MODEL);
       return reply;
