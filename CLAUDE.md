@@ -9,7 +9,7 @@ The user reads the book chapter by chapter and wants to be quizzed daily on what
 
 ## Tech Stack
 - **Frontend**: HTML + CSS + vanilla JavaScript (single file `index.html`)
-- **LLM**: Google Gemini API (`gemini-2.0-flash` — free up to 1,500 req/day)
+- **LLM**: Google Gemini API (default model `gemini-3.8-flash`, user-configurable in Settings)
 - **PDF**: Client-side reading via `PDF.js` (Mozilla)
 - **PWA**: `manifest.json` + Service Worker for mobile installation
 - **Storage**: `localStorage` for history and progress tracking
@@ -76,9 +76,9 @@ fluent-python-quiz/
 
 The user enters their Gemini API key directly in the interface (stored in localStorage).
 
-- Endpoint: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`
-- Free key available at: https://aistudio.google.com/app/apikey
-- Free tier limits: 1,500 requests/day, 15 requests/minute
+- Endpoint: `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`, where `{model}` is `DEFAULT_MODEL` in `index.html` unless the user overrides it in Settings
+- Free key available at: https://aistudio.google.com/app/apikey — check current free-tier limits there, they change as Google retires/replaces model versions
+- Google periodically retires Gemini model versions (e.g. `gemini-2.0-flash-lite` was retired in favor of newer Flash models). If quiz generation errors with "model ... is no longer available", `callGemini()` in `index.html` auto-retries once against `FALLBACK_MODEL` (`gemini-flash-latest`, Google's always-current alias) and persists that choice. When bumping `DEFAULT_MODEL`, verify the new model ID against https://ai.google.dev/gemini-api/docs/models first
 
 ---
 
