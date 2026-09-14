@@ -15,7 +15,8 @@ Built originally for **Fluent Python** by Luciano Ramalho, but works with any te
   - *Concurrency: Threading & Multiprocessing* (`threading`, `multiprocessing`, `concurrent.futures`)
   - *Decorators & Python Syntax* (PEP 318, `functools.wraps`/`lru_cache`/`singledispatch`)
 - **Random quiz by default** — a chapter is picked for you on every launch
-- **AI-generated multiple-choice questions** — Gemini reads the chapter/topic and creates 4-option MCQs (concepts, code, practical use) with instant right/wrong feedback and an explanation
+- **AI-generated multiple-choice questions, biased toward practical judgment** — Gemini favors "what does this code actually output", "which approach is more idiomatic", and realistic debugging/review scenarios over pure recall, with instant right/wrong feedback and an explanation
+- **Persistent per-chapter question bank** — questions are generated once per chapter into a growing bank (stored locally, not regenerated every launch); repeat visits to a chapter are usually instant with zero API calls, and dense chapters build up real depth over time instead of one risky all-at-once request
 - **Weak spots tracker with spaced repetition** — missed questions are saved and rescheduled with a Leitner system (1/2/4/9/18-day intervals); a question "graduates" out of the list once you've answered it right on schedule several times in a row
 - **Multiple books** — switch between books from the header dropdown
 - **Progress tracking** — scores per chapter saved across sessions

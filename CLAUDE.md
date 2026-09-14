@@ -45,6 +45,13 @@ The user reads the book chapter by chapter and wants to be quizzed daily on what
 - A spot graduates (is removed) after being answered correctly at the last box — this is what makes review durable instead of "seen once, forgotten"
 - `launchWeakSession` always sorts by soonest-due first, so pressing "Weak spots" never dead-ends even if nothing is strictly due yet
 
+### 3d. Question bank (persistent, per-chapter, IndexedDB)
+- Quiz questions are no longer generated fresh every launch. Each chapter has a growing question bank stored in IndexedDB under key `qbank_{bookId}_{chapterIdx}` (an array of `{id, question, options, correct, explanation, timesSeen, timesCorrect, box, nextReviewAt}`)
+- `drawFromQuestionBank()` picks the soonest-due / least-recently-seen questions first; it only calls Gemini (via `topUpQuestionBank()`, batches of `BANK_TOPUP_BATCH`=8) when the bank doesn't have enough due questions, capped at `BANK_MAX_SIZE`=60 per chapter — repeat visits to a chapter are usually instant with zero API calls
+- Each bank question has its own Leitner box, independent of the weak-spots list above (`recordBankAnswer()`); unlike weak spots it's never removed on mastery, it just keeps recycling at its longest interval — this is what gives a real per-question evolution curve over time, not just a chapter %
+- `buildGenerationPrompt()` is tuned to favor practical/judgment questions (bug-spotting, idiom comparisons, realistic scenarios) over pure recall, since that's the actual goal of quizzing — see the prompt for full guidance
+- Settings → "Clear question bank" wipes a book's banked questions via `dbDeleteByPrefix()` to force fresh generation
+
 ### 4. Progress Tracking
 - Session history saved in localStorage
 - Score per chapter
