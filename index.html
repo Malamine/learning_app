@@ -418,7 +418,12 @@
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
         <button class="btn btn-ghost" id="clear-weak-btn" style="font-size:0.8rem;">🗑 Clear weak spots</button>
         <button class="btn btn-ghost" id="clear-history-btn" style="font-size:0.8rem;">🗑 Clear quiz history</button>
+        <button class="btn btn-ghost" id="clear-bank-btn" style="font-size:0.8rem;">🗑 Clear question bank</button>
       </div>
+      <p style="font-size:0.7rem;color:var(--text-dim);margin-top:0.5rem;line-height:1.4;">
+        Quiz questions are generated once per chapter and reused (spaced-repetition style) so retries
+        don't re-call Gemini every time. Clear the bank to force fresh generation.
+      </p>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="modal-close-btn">Close</button>
@@ -461,6 +466,19 @@ async function dbSet(key, val) {
 async function dbDelete(key) {
   const db = await openDB();
   return new Promise((res, rej) => { const r = db.transaction('store','readwrite').objectStore('store').delete(key); r.onsuccess = () => res(); r.onerror = e => rej(e.target.error); });
+}
+async function dbDeleteByPrefix(prefix) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const req = db.transaction('store', 'readwrite').objectStore('store').openCursor();
+    req.onsuccess = e => {
+      const cursor = e.target.result;
+      if (!cursor) { res(); return; }
+      if (String(cursor.key).startsWith(prefix)) cursor.delete();
+      cursor.continue();
+    };
+    req.onerror = e => rej(e.target.error);
+  });
 }
 
 // ─── Book storage ─────────────────────────────────────────────────────────────
@@ -827,6 +845,63 @@ function updateWeakBadges() {
   [$('sidebar-weak-btn'), $('cs-weak-btn')].forEach(el => { if (el) el.style.display = n > 0 ? '' : 'none'; });
 }
 
+// ─── Question bank (persistent, per-chapter, grows over repeated visits) ──────
+// Stored in IndexedDB (same DB as book PDFs) rather than localStorage: it holds
+// full question text + code + explanations across a whole book, which can add
+// up to more than localStorage's ~5-10MB comfort zone.
+// Each bank question tracks its own Leitner box/nextReviewAt (independent of the
+// weak-spots list above), so quiz launches sample the soonest-due / least-seen
+// questions first instead of only ever re-generating from scratch.
+const BANK_TOPUP_BATCH = 8;   // questions generated per Gemini call when topping up
+const BANK_MAX_SIZE = 60;     // stop growing a chapter's bank past this many questions
+
+function qbankKey(bookId, chapterIdx) { return `qbank_${bookId}_${chapterIdx}`; }
+async function getQuestionBank(bookId, chapterIdx) { return (await dbGet(qbankKey(bookId, chapterIdx))) || []; }
+async function saveQuestionBank(bookId, chapterIdx, bank) { await dbSet(qbankKey(bookId, chapterIdx), bank); }
+
+// Generates a fresh batch of practical MCQs for a chapter and appends them to its bank.
+async function topUpQuestionBank(chapterIdx, chapterText, count) {
+  const raw = await callGemini([{ role:'user', parts:[{ text: buildGenerationPrompt(chapterText, count) }] }], true, QUESTIONS_SCHEMA);
+  const fresh = parseQuestions(raw);
+  if (!fresh.length) return getQuestionBank(state.bookId, chapterIdx);
+  const now = Date.now();
+  const bank = await getQuestionBank(state.bookId, chapterIdx);
+  const grown = bank.concat(fresh.map(q => ({ ...q, id: genId(), createdAt: now, timesSeen: 0, timesCorrect: 0, box: 0, nextReviewAt: now })));
+  await saveQuestionBank(state.bookId, chapterIdx, grown);
+  return grown;
+}
+
+// Picks `needed` questions for a session: due/least-recently-seen first, topping up
+// the bank with a new Gemini-generated batch first if it's thin on due questions.
+async function drawFromQuestionBank(chapterIdx, chapterText, needed) {
+  let bank = await getQuestionBank(state.bookId, chapterIdx);
+  const now = Date.now();
+  const due = bank.filter(q => (q.nextReviewAt ?? 0) <= now);
+  if (due.length < needed && bank.length < BANK_MAX_SIZE) {
+    setLoading('Generating new practical questions with Gemini…', 65, state.chapters[chapterIdx]?.title || '');
+    bank = await topUpQuestionBank(chapterIdx, chapterText, Math.max(BANK_TOPUP_BATCH, needed - due.length));
+  }
+  const pool = bank.slice().sort((a, b) => (a.nextReviewAt ?? 0) - (b.nextReviewAt ?? 0) || (a.timesSeen ?? 0) - (b.timesSeen ?? 0));
+  return pool.slice(0, needed);
+}
+
+// Records the outcome of a bank-backed question and reschedules it (never removed —
+// unlike weak spots, a mastered bank question just keeps recycling at its longest interval).
+async function recordBankAnswer(chapterIdx, questionId, isCorrect) {
+  const bank = await getQuestionBank(state.bookId, chapterIdx);
+  const q = bank.find(x => x.id === questionId);
+  if (!q) return;
+  q.timesSeen = (q.timesSeen || 0) + 1;
+  if (isCorrect) {
+    q.timesCorrect = (q.timesCorrect || 0) + 1;
+    q.box = Math.min((q.box || 0) + 1, LEITNER_INTERVALS_DAYS.length - 1);
+  } else {
+    q.box = 0;
+  }
+  q.nextReviewAt = Date.now() + LEITNER_INTERVALS_DAYS[q.box] * DAY_MS;
+  await saveQuestionBank(state.bookId, chapterIdx, bank);
+}
+
 // ─── Sidebar + grid ───────────────────────────────────────────────────────────
 function getBestScore(idx) {
   const sessions = getHistory().filter(s => s.bookId === state.bookId && (s.chapterIdx === idx || s.chapterName === state.chapters[idx]?.title));
@@ -897,8 +972,12 @@ async function launchQuiz(idx) {
   showScreen('loading'); setLoading('Extracting chapter text…', 20, ch.title);
   try {
     state.chapterText = (await getChapterText(idx)).slice(0, 32000);
-    setLoading('Generating questions with Gemini…', 65, ch.title);
-    await startQuiz(ch.title);
+    setLoading('Checking question bank…', 40, ch.title);
+    const picked = await drawFromQuestionBank(idx, state.chapterText, state.numQuestions);
+    if (!picked.length) throw new Error('Could not generate questions from Gemini. Try again.');
+    state.questions = picked.map(q => ({ id: q.id, question: q.question, options: q.options, correct: q.correct, explanation: q.explanation }));
+    state.currentQ = 0; state.answers = [];
+    beginQuizUI(ch.title);
   } catch (err) { alert('Error: ' + err.message); showChapterSelect(); }
 }
 
@@ -924,11 +1003,7 @@ async function launchWeakSession() {
       }
     }
   }
-  $('messages').innerHTML = '';
-  $('chapter-label').innerHTML = `<strong>🔁 Weak Spots Review</strong>`;
-  updateProgress(); renderSidebar(); showScreen('chat');
-  addMessage('system', `🔁 <strong>Weak Spots Review</strong><br/>${state.questions.length} question(s) you previously struggled with.`);
-  askNextQuestion();
+  beginQuizUI('🔁 Weak Spots Review', `🔁 <strong>Weak Spots Review</strong><br/>${state.questions.length} question(s) you previously struggled with.`);
 }
 
 async function extractChapterText(pdf, startPage, endPage) {
@@ -956,16 +1031,13 @@ const QUESTIONS_SCHEMA = {
   },
 };
 
-async function startQuiz(chapterTitle) {
-  state.questions = []; state.currentQ = 0; state.answers = [];
-  const raw = await callGemini([{ role:'user', parts:[{ text: buildGenerationPrompt(state.chapterText, state.numQuestions) }] }], true, QUESTIONS_SCHEMA);
-  const questions = parseQuestions(raw);
-  if (!questions.length) throw new Error('Could not parse questions from Gemini. Try again.');
-  state.questions = questions;
+// Shared chat-screen setup once state.questions is populated, whether drawn from the
+// bank (normal mode) or assembled from weak spots (launchWeakSession).
+function beginQuizUI(chapterTitle, systemMessage) {
   $('messages').innerHTML = '';
   $('chapter-label').innerHTML = `<strong>${escHtml(chapterTitle)}</strong>`;
   updateProgress(); renderSidebar(); showScreen('chat');
-  addMessage('system', `📚 <strong>${escHtml(chapterTitle)}</strong><br/>${questions.length} question(s) ready. Good luck!`);
+  addMessage('system', systemMessage || `📚 <strong>${escHtml(chapterTitle)}</strong><br/>${state.questions.length} question(s) ready. Good luck!`);
   askNextQuestion();
 }
 
@@ -980,10 +1052,16 @@ ${text}
 --- END ---
 
 Generate exactly ${n} varied, relevant multiple-choice quiz questions about this excerpt.
-- Mix types: concepts, code reading, practical use cases.
+Favor questions that build real-world judgment over rote recall — the goal is to make the
+reader a better programmer, not just test if they remember a definition:
+- Prefer "what does this code actually output / what's the bug" over "what is X called".
+- Prefer "which of these two approaches is more idiomatic here, and why" over "is X true or false".
+- Where it fits the material, frame questions around a realistic scenario (debugging a snippet,
+  reviewing a teammate's code, choosing between two designs) rather than an abstract definition.
+- Still mix in some straightforward concept-recall questions — not every question needs a scenario.
 - Each question answerable from the excerpt alone.
 - Exactly 4 answer options per question, only ONE correct.
-- Distractors must be plausible, not obviously wrong.
+- Distractors must be plausible mistakes a real programmer could make, not obviously wrong filler.
 - When a question refers to a specific function, class, or code example from the excerpt, include the exact code snippet in the "question" field as a markdown code block (triple backticks with "python").
 - Provide a short "explanation" for why the correct option is right and, briefly, why the others are wrong.
 - Respond ONLY with a JSON array (no markdown fences, no prose) matching this shape:
@@ -1061,6 +1139,9 @@ function selectOption(wrap, q, chosenIdx) {
   } else {
     saveWeakSpot(q, chIdx, chName);
   }
+  // Bank-backed questions (normal mode) track their own Leitner schedule so future
+  // sessions on this chapter surface due/less-seen questions first.
+  if (state.mode === 'normal' && q.id) recordBankAnswer(state.activeChapterIdx, q.id, isCorrect);
   state.answers.push({ question: q.question, options: q.options, correct: q.correct, chosen: chosenIdx, isCorrect, explanation: q.explanation });
   state.currentQ++; updateProgress();
   setTimeout(askNextQuestion, 900);
@@ -1316,6 +1397,12 @@ $('clear-history-btn').addEventListener('click', () => {
   if (!confirm('Delete all quiz history?')) return;
   localStorage.removeItem('quiz_history'); renderSidebar();
   if ($('chapter-select-screen').style.display !== 'none') renderChapterGrid(); alert('History cleared.');
+});
+$('clear-bank-btn').addEventListener('click', async () => {
+  if (!state.bookId) { alert('No book selected.'); return; }
+  if (!confirm('Clear the generated question bank for this book? Gemini will generate fresh questions next time you start a quiz.')) return;
+  await dbDeleteByPrefix(`qbank_${state.bookId}_`);
+  alert('Question bank cleared.');
 });
 
 // ─── Daily reminders ──────────────────────────────────────────────────────────
